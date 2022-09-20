@@ -1,0 +1,54 @@
+From: Aram Sargsyan <aram@isc.org>
+Date: Thu, 10 Mar 2022 17:30:34 +0000
+Subject: Fix an issue in dig when retrying with the next server after
+ SERVFAIL
+
+After a query results in a SERVFAIL result, and there is another
+registered query in the lookup's queries list, `dig` starts the next
+query to try another server, but for some reason, reports about that
+also when the current query is in the head of the list, even if there
+is no other query in the list to try.
+
+Use the same condition for both decisions, and after starting the next
+query, jump to the "detach_query" label instead of "next_lookup",
+because there is no need to start the next lookup after we just started
+a query in the current lookup.
+
+Origin: upstream, https://gitlab.isc.org/isc-projects/bind9/-/commit/e888c62fbd770e31f72b7d6bf08253d38ddc2e5d
+Bug: https://gitlab.isc.org/isc-projects/bind9/-/issues/3020
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/bind9/+bug/1964686
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/bind9/+bug/1964400
+
+---
+ bin/dig/dighost.c | 11 +----------
+ 1 file changed, 1 insertion(+), 10 deletions(-)
+
+diff --git a/bin/dig/dighost.c b/bin/dig/dighost.c
+index e09c547..55167b2 100644
+--- a/bin/dig/dighost.c
++++ b/bin/dig/dighost.c
+@@ -3896,15 +3896,6 @@ recv_done(isc_nmhandle_t *handle, isc_result_t eresult, isc_region_t *region,
+ 			} else {
+ 				start_udp(next);
+ 			}
+-		}
+-
+-		/*
+-		 * If our query is at the head of the list and there
+-		 * is no next, we're the only one left, so fall
+-		 * through to print the message.
+-		 */
+-		if ((ISC_LIST_HEAD(l->q) != query) ||
+-		    (ISC_LIST_NEXT(query, link) != NULL)) {
+ 			dighost_comments(l,
+ 					 "Got %s from %s, trying next "
+ 					 "server",
+@@ -3912,7 +3903,7 @@ recv_done(isc_nmhandle_t *handle, isc_result_t eresult, isc_region_t *region,
+ 						 ? "SERVFAIL reply"
+ 						 : "recursion not available",
+ 					 query->servname);
+-			goto next_lookup;
++			goto detach_query;
+ 		}
+ 	}
+ 
