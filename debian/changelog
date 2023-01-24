@@ -1,3 +1,24 @@
+bind9 (1:9.18.1-1ubuntu1.3) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: An UPDATE message flood may cause named to exhaust all
+    available memory
+    - debian/patches/CVE-2022-3094.patch: add counter in
+      bin/named/bind9.xsl, bin/named/statschannel.c, doc/arm/reference.rst,
+      lib/ns/include/ns/server.h, lib/ns/include/ns/stats.h,
+      lib/ns/server.c, lib/ns/update.c.
+    - CVE-2022-3094
+  * SECURITY UPDATE: named configured to answer from stale cache may
+    terminate unexpectedly while processing RRSIG queries
+    - debian/patches/CVE-2022-3736.patch: fix logic in lib/ns/query.c.
+    - CVE-2022-3736
+  * SECURITY UPDATE: named configured to answer from stale cache may
+    terminate unexpectedly at recursive-clients soft quota
+    - debian/patches/CVE-2022-3924.patch: improve logic in
+      lib/dns/resolver.c, lib/ns/query.c.
+    - CVE-2022-3924
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 24 Jan 2023 08:18:53 -0500
+
 bind9 (1:9.18.1-1ubuntu1.2) jammy-security; urgency=medium
 
   * SECURITY UPDATE: Processing large delegations may severely degrade
