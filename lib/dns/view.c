@@ -118,11 +118,12 @@ dns_view_create(isc_mem_t *mctx, dns_rdataclass_t rdclass, const char *name,
 
 	isc_mutex_init(&view->lock);
 
+	isc_rwlock_init(&view->sfd_lock, 0, 0);
+
 	view->zonetable = NULL;
 	result = dns_zt_create(mctx, rdclass, &view->zonetable);
 	if (result != ISC_R_SUCCESS) {
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "dns_zt_create() failed: %s",
+		UNEXPECTED_ERROR("dns_zt_create() failed: %s",
 				 isc_result_totext(result));
 		result = ISC_R_UNEXPECTED;
 		goto cleanup_mutex;
@@ -133,8 +134,7 @@ dns_view_create(isc_mem_t *mctx, dns_rdataclass_t rdclass, const char *name,
 	view->fwdtable = NULL;
 	result = dns_fwdtable_create(mctx, &view->fwdtable);
 	if (result != ISC_R_SUCCESS) {
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "dns_fwdtable_create() failed: %s",
+		UNEXPECTED_ERROR("dns_fwdtable_create() failed: %s",
 				 isc_result_totext(result));
 		result = ISC_R_UNEXPECTED;
 		goto cleanup_zt;
@@ -210,6 +210,7 @@ dns_view_create(isc_mem_t *mctx, dns_rdataclass_t rdclass, const char *name,
 	view->denyanswernames = NULL;
 	view->answernames_exclude = NULL;
 	view->rrl = NULL;
+	view->sfd = NULL;
 	view->provideixfr = true;
 	view->maxcachettl = 7 * 24 * 3600;
 	view->maxncachettl = 3 * 3600;
@@ -336,6 +337,7 @@ cleanup_zt:
 	}
 
 cleanup_mutex:
+	isc_rwlock_destroy(&view->sfd_lock);
 	isc_mutex_destroy(&view->lock);
 
 	if (view->nta_file != NULL) {
@@ -349,7 +351,7 @@ cleanup_name:
 	return (result);
 }
 
-static inline void
+static void
 destroy(dns_view_t *view) {
 	dns_dns64_t *dns64;
 	dns_dlzdb_t *dlzdb;
@@ -506,6 +508,9 @@ destroy(dns_view_t *view) {
 	if (view->answernames_exclude != NULL) {
 		dns_rbt_destroy(&view->answernames_exclude);
 	}
+	if (view->sfd != NULL) {
+		dns_rbt_destroy(&view->sfd);
+	}
 	if (view->delonly != NULL) {
 		dns_name_t *name;
 		int i;
@@ -598,6 +603,7 @@ destroy(dns_view_t *view) {
 		dns_badcache_destroy(&view->failcache);
 	}
 	isc_mutex_destroy(&view->new_zone_lock);
+	isc_rwlock_destroy(&view->sfd_lock);
 	isc_mutex_destroy(&view->lock);
 	isc_refcount_destroy(&view->references);
 	isc_refcount_destroy(&view->weakrefs);
@@ -719,7 +725,8 @@ dns_view_dialup(dns_view_t *view) {
 	REQUIRE(DNS_VIEW_VALID(view));
 	REQUIRE(view->zonetable != NULL);
 
-	(void)dns_zt_apply(view->zonetable, false, NULL, dialup, NULL);
+	(void)dns_zt_apply(view->zonetable, isc_rwlocktype_read, false, NULL,
+			   dialup, NULL);
 }
 
 void
@@ -1106,7 +1113,8 @@ db_find:
 			dns_rdataset_disassociate(rdataset);
 		}
 		if (sigrdataset != NULL &&
-		    dns_rdataset_isassociated(sigrdataset)) {
+		    dns_rdataset_isassociated(sigrdataset))
+		{
 			dns_rdataset_disassociate(sigrdataset);
 		}
 		if (node != NULL) {
@@ -1134,7 +1142,8 @@ db_find:
 			if (dns_rdataset_isassociated(&zrdataset)) {
 				dns_rdataset_clone(&zrdataset, rdataset);
 				if (sigrdataset != NULL &&
-				    dns_rdataset_isassociated(&zsigrdataset)) {
+				    dns_rdataset_isassociated(&zsigrdataset))
+				{
 					dns_rdataset_clone(&zsigrdataset,
 							   sigrdataset);
 				}
@@ -1161,7 +1170,8 @@ db_find:
 			dns_rdataset_clone(rdataset, &zrdataset);
 			dns_rdataset_disassociate(rdataset);
 			if (sigrdataset != NULL &&
-			    dns_rdataset_isassociated(sigrdataset)) {
+			    dns_rdataset_isassociated(sigrdataset))
+			{
 				dns_rdataset_clone(sigrdataset, &zsigrdataset);
 				dns_rdataset_disassociate(sigrdataset);
 			}
@@ -1183,7 +1193,8 @@ db_find:
 			dns_rdataset_disassociate(rdataset);
 		}
 		if (sigrdataset != NULL &&
-		    dns_rdataset_isassociated(sigrdataset)) {
+		    dns_rdataset_isassociated(sigrdataset))
+		{
 			dns_rdataset_disassociate(sigrdataset);
 		}
 		if (db != NULL) {
@@ -1280,7 +1291,8 @@ dns_view_simplefind(dns_view_t *view, const dns_name_t *name,
 			dns_rdataset_disassociate(rdataset);
 		}
 		if (sigrdataset != NULL &&
-		    dns_rdataset_isassociated(sigrdataset)) {
+		    dns_rdataset_isassociated(sigrdataset))
+		{
 			dns_rdataset_disassociate(sigrdataset);
 		}
 	} else if (result != ISC_R_SUCCESS && result != DNS_R_GLUE &&
@@ -1292,7 +1304,8 @@ dns_view_simplefind(dns_view_t *view, const dns_name_t *name,
 			dns_rdataset_disassociate(rdataset);
 		}
 		if (sigrdataset != NULL &&
-		    dns_rdataset_isassociated(sigrdataset)) {
+		    dns_rdataset_isassociated(sigrdataset))
+		{
 			dns_rdataset_disassociate(sigrdataset);
 		}
 		result = ISC_R_NOTFOUND;
@@ -1399,7 +1412,8 @@ db_find:
 			dns_rdataset_clone(rdataset, &zrdataset);
 			dns_rdataset_disassociate(rdataset);
 			if (sigrdataset != NULL &&
-			    dns_rdataset_isassociated(sigrdataset)) {
+			    dns_rdataset_isassociated(sigrdataset))
+			{
 				dns_rdataset_clone(sigrdataset, &zsigrdataset);
 				dns_rdataset_disassociate(sigrdataset);
 			}
@@ -1453,7 +1467,8 @@ finish:
 		if (dns_rdataset_isassociated(rdataset)) {
 			dns_rdataset_disassociate(rdataset);
 			if (sigrdataset != NULL &&
-			    dns_rdataset_isassociated(sigrdataset)) {
+			    dns_rdataset_isassociated(sigrdataset))
+			{
 				dns_rdataset_disassociate(sigrdataset);
 			}
 		}
@@ -1463,7 +1478,8 @@ finish:
 		}
 		dns_rdataset_clone(&zrdataset, rdataset);
 		if (sigrdataset != NULL &&
-		    dns_rdataset_isassociated(&zrdataset)) {
+		    dns_rdataset_isassociated(&zrdataset))
+		{
 			dns_rdataset_clone(&zsigrdataset, sigrdataset);
 		}
 	} else if (try_hints) {
@@ -2464,7 +2480,8 @@ dns_view_loadnta(dns_view_t *view) {
 
 		CHECK(isc_lex_gettoken(lex, options, &token));
 		if (token.type != isc_tokentype_eol &&
-		    token.type != isc_tokentype_eof) {
+		    token.type != isc_tokentype_eof)
+		{
 			CHECK(ISC_R_UNEXPECTEDTOKEN);
 		}
 
@@ -2580,4 +2597,78 @@ dns_view_staleanswerenabled(dns_view_t *view) {
 	}
 
 	return (result);
+}
+
+static void
+free_sfd(void *data, void *arg) {
+	isc_mem_put(arg, data, sizeof(unsigned int));
+}
+
+void
+dns_view_sfd_add(dns_view_t *view, const dns_name_t *name) {
+	isc_result_t result;
+	dns_rbtnode_t *node = NULL;
+
+	REQUIRE(DNS_VIEW_VALID(view));
+
+	RWLOCK(&view->sfd_lock, isc_rwlocktype_write);
+	if (view->sfd == NULL) {
+		result = dns_rbt_create(view->mctx, free_sfd, view->mctx,
+					&view->sfd);
+		RUNTIME_CHECK(result == ISC_R_SUCCESS);
+	}
+
+	result = dns_rbt_addnode(view->sfd, name, &node);
+	RUNTIME_CHECK(result == ISC_R_SUCCESS || result == ISC_R_EXISTS);
+	if (node->data != NULL) {
+		unsigned int *count = node->data;
+		(*count)++;
+	} else {
+		unsigned int *count = isc_mem_get(view->mctx,
+						  sizeof(unsigned int));
+		*count = 1;
+		node->data = count;
+	}
+	RWUNLOCK(&view->sfd_lock, isc_rwlocktype_write);
+}
+
+void
+dns_view_sfd_del(dns_view_t *view, const dns_name_t *name) {
+	isc_result_t result;
+	void *data = NULL;
+
+	REQUIRE(DNS_VIEW_VALID(view));
+
+	RWLOCK(&view->sfd_lock, isc_rwlocktype_write);
+	INSIST(view->sfd != NULL);
+	result = dns_rbt_findname(view->sfd, name, 0, NULL, &data);
+	if (result == ISC_R_SUCCESS) {
+		unsigned int *count = data;
+		INSIST(count != NULL);
+		if (--(*count) == 0U) {
+			result = dns_rbt_deletename(view->sfd, name, false);
+			RUNTIME_CHECK(result == ISC_R_SUCCESS);
+		}
+	}
+	RWUNLOCK(&view->sfd_lock, isc_rwlocktype_write);
+}
+
+void
+dns_view_sfd_find(dns_view_t *view, const dns_name_t *name,
+		  dns_name_t *foundname) {
+	REQUIRE(DNS_VIEW_VALID(view));
+
+	if (view->sfd != NULL) {
+		isc_result_t result;
+		void *data = NULL;
+
+		RWLOCK(&view->sfd_lock, isc_rwlocktype_read);
+		result = dns_rbt_findname(view->sfd, name, 0, foundname, &data);
+		RWUNLOCK(&view->sfd_lock, isc_rwlocktype_read);
+		if (result != ISC_R_SUCCESS && result != DNS_R_PARTIALMATCH) {
+			dns_name_copy(dns_rootname, foundname);
+		}
+	} else {
+		dns_name_copy(dns_rootname, foundname);
+	}
 }

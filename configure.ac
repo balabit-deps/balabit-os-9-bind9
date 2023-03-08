@@ -16,9 +16,9 @@
 #
 m4_define([bind_VERSION_MAJOR], 9)dnl
 m4_define([bind_VERSION_MINOR], 18)dnl
-m4_define([bind_VERSION_PATCH], 1)dnl
+m4_define([bind_VERSION_PATCH], 12)dnl
 m4_define([bind_VERSION_EXTRA], )dnl
-m4_define([bind_DESCRIPTION], [(Stable Release)])dnl
+m4_define([bind_DESCRIPTION], [(Extended Support Version)])dnl
 m4_define([bind_SRCID], [m4_esyscmd_s([git rev-parse --short HEAD | cut -b1-7])])dnl
 m4_define([bind_PKG_VERSION], [[bind_VERSION_MAJOR.bind_VERSION_MINOR.bind_VERSION_PATCH]bind_VERSION_EXTRA])dnl
 
@@ -79,7 +79,7 @@ AC_PROG_CPP_WERROR
 #
 # Find build compiler when cross compiling
 #
-AX_CC_FOR_BUILD
+AX_PROG_CC_FOR_BUILD
 
 #
 # Find the machine's endian flavor.
@@ -112,12 +112,17 @@ AS_IF([test "$enable_static" != "no" && test "$enable_developer" != "yes"],
       [AC_MSG_ERROR([Static linking is not supported as it disables dlopen() and certain security features (e.g. RELRO, ASLR)])])
 
 #
-# Set the default CFLAGS and CPPFLAGS
+# Set the default CFLAGS, CPPFLAGS, and LDFLAGS
 #
 STD_CFLAGS="-Wall -Wextra -Wwrite-strings -Wpointer-arith -Wno-missing-field-initializers -Wformat -Wshadow"
 
 # These should be always errors
-STD_CFLAGS="$STD_CFLAGS -Werror=implicit-function-declaration -Werror=missing-prototypes -Werror=format-security -Werror=parentheses -Werror=implicit -Werror=strict-prototypes"
+STD_CFLAGS="$STD_CFLAGS -Werror=implicit-function-declaration -Werror=missing-prototypes -Werror=format-security -Werror=parentheses -Werror=implicit -Werror=strict-prototypes -Werror=vla"
+
+STD_LDFLAGS=""
+
+# ... except in test code
+TEST_CFLAGS="-Wno-vla"
 
 # Fortify the sources by default
 STD_CPPFLAGS="-D_FORTIFY_SOURCE=2"
@@ -132,6 +137,9 @@ AX_CHECK_COMPILE_FLAG([-Werror -fno-delete-null-pointer-checks],
 		      [STD_CFLAGS="$STD_CFLAGS -fno-delete-null-pointer-checks"])
 AX_CHECK_COMPILE_FLAG([-fdiagnostics-show-option],
 		      [STD_CFLAGS="$STD_CFLAGS -fdiagnostics-show-option"])
+
+AX_CHECK_LINK_FLAG([-Wl,--export-dynamic],
+		   [STD_LDFLAGS="$STD_LDFLAGS -Wl,--export-dynamic"])
 
 host_macos=no
 AS_CASE([$host],[*-darwin*],[host_macos=yes])
@@ -159,6 +167,8 @@ AS_IF([test "$enable_developer" = "yes"],
 AC_SUBST([DEVELOPER_MODE])
 AC_SUBST([STD_CFLAGS])
 AC_SUBST([STD_CPPFLAGS])
+AC_SUBST([STD_LDFLAGS])
+AC_SUBST([TEST_CFLAGS])
 
 # [pairwise: --enable-warn-error, --disable-warn-error]
 AC_ARG_ENABLE([warn_error],
@@ -175,18 +185,6 @@ AS_IF([test "$enable_warn_error" = "yes"],
 PKG_PROG_PKG_CONFIG
 AS_IF([test -z "$PKG_CONFIG"],
       [AC_MSG_ERROR([The pkg-config script could not be found or is too old.])])
-
-# [pairwise: --enable-buffer-useinline, --disable-buffer-useinline]
-AC_ARG_ENABLE(buffer_useinline,
-	      AS_HELP_STRING([--enable-buffer-useinline],
-			     [define ISC_BUFFER_USEINLINE when compiling
-				[default=yes]]),
-	      if test yes = "${enable}"
-	      then
-		      AC_DEFINE([ISC_BUFFER_USEINLINE], [1],
-				[Define if you want to use inline buffers])
-	      fi,
-	      AC_DEFINE([ISC_BUFFER_USEINLINE], [1]))
 
 # Fuzzing is not included in pairwise testing as fuzzing tools are
 # not present in the relevant Docker image.
@@ -262,7 +260,7 @@ AM_CONDITIONAL([HAVE_PERLMOD_TIME_HIRES],
 #
 # Python is optional, it is used only by some of the system test scripts.
 #
-AM_PATH_PYTHON([3.4], [], [:])
+AM_PATH_PYTHON([3.6], [], [:])
 AM_CONDITIONAL([HAVE_PYTHON], [test "$PYTHON" != ":"])
 
 AC_PATH_PROGS([PYTEST], [pytest-3 py.test-3 pytest py.test pytest-pypy], [])
@@ -481,7 +479,7 @@ AS_IF([test "$enable_geoip" = "yes"],
 				  [AC_DEFINE([HAVE_GEOIP2], [1], [Build with GeoIP2 support])
 				   MAXMINDDB_LIBS="$MAXMINDDB_LIBS $ac_cv_search_MMDB_open"
 				   AC_MSG_NOTICE([GeoIP2 default database path set to $with_maxminddb/share/GeoIP])
-				   AS_VAR_COPY([MAXMINDDB_PREFIX], [$with_maxminddb])
+				   AS_VAR_COPY([MAXMINDDB_PREFIX], [with_maxminddb])
 				  ],
 				  [AC_MSG_ERROR([GeoIP2 requested, but libmaxminddb not found])])
 		   AX_RESTORE_FLAGS([maxminddb])
@@ -500,7 +498,7 @@ LIBS="$PTHREAD_LIBS $LIBS"
 CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
 CC="$PTHREAD_CC"
 
-AC_CHECK_FUNCS([pthread_attr_getstacksize pthread_attr_setstacksize])
+AC_CHECK_FUNCS([pthread_attr_getstacksize pthread_attr_setstacksize pthread_barrier_init])
 
 # [pairwise: --with-locktype=adaptive, --with-locktype=standard]
 AC_ARG_WITH([locktype],
@@ -547,6 +545,10 @@ AC_MSG_CHECKING([for libuv])
 PKG_CHECK_MODULES([LIBUV], [libuv >= 1.0.0], [],
 		  [AC_MSG_ERROR([libuv not found])])
 
+AX_SAVE_FLAGS([libuv])
+CFLAGS="$CFLAGS $LIBUV_CFLAGS"
+LIBS="$LIBS $LIBUV_LIBS"
+
 # libuv recvmmsg support
 AC_CHECK_DECLS([UV_UDP_MMSG_FREE, UV_UDP_MMSG_CHUNK], [], [], [[#include <uv.h>]])
 AC_MSG_CHECKING([whether struct msghdr uses padding for alignment])
@@ -558,9 +560,11 @@ AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <sys/socket.h>],
 		  [AC_MSG_RESULT([no])
 		   AC_CHECK_DECLS([UV_UDP_RECVMMSG], [], [], [[#include <uv.h>]])])
 
+AX_RESTORE_FLAGS([libuv])
+
 # [pairwise: --enable-doh --with-libnghttp2=auto, --enable-doh --with-libnghttp2=yes, --disable-doh]
 AC_ARG_ENABLE([doh],
-	      [AS_HELP_STRING([--disable-doh], [enable DNS over HTTPS, requires libnghttp2 (default=yes)])],
+	      [AS_HELP_STRING([--disable-doh], [disable DNS over HTTPS, removes dependency on libnghttp2 (default is --enable-doh)])],
 	      [], [enable_doh=yes])
 
 # [pairwise: skip]
@@ -579,7 +583,7 @@ AS_IF([test "$enable_doh" = "yes"],
 	       [AC_MSG_ERROR([Specifying libnghttp2 installation path is not supported, adjust PKG_CONFIG_PATH instead])])])
 
 AM_CONDITIONAL([HAVE_LIBNGHTTP2], [test -n "$LIBNGHTTP2_LIBS"])
-					  
+
 
 #
 # flockfile is usually provided by pthreads
@@ -646,6 +650,8 @@ AC_CHECK_FUNCS([SSL_CTX_set_keylog_callback])
 AC_CHECK_FUNCS([SSL_CTX_set_min_proto_version])
 AC_CHECK_FUNCS([SSL_CTX_up_ref])
 AC_CHECK_FUNCS([SSL_read_ex SSL_peek_ex SSL_write_ex])
+AC_CHECK_FUNCS([SSL_CTX_set1_cert_store X509_STORE_up_ref])
+AC_CHECK_FUNCS([SSL_SESSION_is_resumable])
 
 #
 # Check for algorithm support in OpenSSL
@@ -951,7 +957,7 @@ AS_IF([test "$enable_tcp_fastopen" = "yes"],
 #
 # Check for some other useful functions that are not ever-present.
 #
-AC_CHECK_FUNCS([strlcpy strlcat])
+AC_CHECK_FUNCS([strlcpy strlcat strnstr])
 
 #
 # Check for readline support
@@ -1145,7 +1151,7 @@ AC_CHECK_HEADERS(
   ])
 LIBS="$LIBS $ISC_ATOMIC_LIBS"
 
-AC_CHECK_HEADERS([stdalign.h])
+AC_CHECK_HEADERS([stdalign.h stdnoreturn.h])
 
 AC_CHECK_HEADERS([uchar.h])
 
@@ -1329,7 +1335,7 @@ AC_SUBST([CMOCKA_LIBS])
 AM_CONDITIONAL([HAVE_CMOCKA], [test "$with_cmocka" = "yes"])
 
 #
-# Compile with jemalloc (either provided as package or wired in the system on FreeBSD and NetBSD)
+# Compile with jemalloc (either provided as package or wired in the system on FreeBSD)
 #
 # [pairwise: --with-jemalloc=detect, --with-jemalloc=yes, --without-jemalloc]
 AC_ARG_WITH([jemalloc],
@@ -1348,7 +1354,9 @@ AS_CASE([$with_jemalloc],
 	    with_jemalloc=no])])
 
 AS_IF([test "$with_jemalloc" = "no"],
-      [AC_CHECK_FUNCS([malloc_size malloc_usable_size])])
+      [AS_CASE([$host],
+	       [*-freebsd*],[AC_MSG_ERROR([You cannot compile without jemalloc; jemalloc is the system allocator on FreeBSD])])
+       AC_CHECK_FUNCS([malloc_size malloc_usable_size])])
 
 AM_CONDITIONAL([HAVE_JEMALLOC], [test "$with_jemalloc" = "yes"])
 
@@ -1455,10 +1463,7 @@ AC_COMPILE_IFELSE(
     AC_MSG_RESULT([no])
   ])
 
-# DNSRPS is not included in pairwise testing as the librpz library is not
-# present in the relevant Docker image.
-#
-# [pairwise: skip]
+# [pairwise: --enable-dnsrps --enable-dnsrps-dl, --disable-dnsrps]
 AC_ARG_ENABLE([dnsrps-dl],
 	      [AS_HELP_STRING([--enable-dnsrps-dl],
 			      [DNS Response Policy Service delayed link
@@ -1559,14 +1564,16 @@ AC_CONFIG_FILES([doc/Makefile
 
 # Unit Tests
 
-AC_CONFIG_FILES([lib/isc/tests/Makefile
-		 lib/dns/tests/Makefile
-		 lib/ns/tests/Makefile
-		 lib/irs/tests/Makefile
-		 lib/isccfg/tests/Makefile])
+AC_CONFIG_FILES([tests/Makefile
+		 tests/isc/Makefile
+		 tests/dns/Makefile
+		 tests/ns/Makefile
+		 tests/irs/Makefile
+		 tests/isccfg/Makefile
+		 tests/libtest/Makefile])
 
-AC_CONFIG_FILES([lib/unit-test-driver.sh],
-		[chmod +x lib/unit-test-driver.sh])
+AC_CONFIG_FILES([tests/unit-test-driver.sh],
+		[chmod +x tests/unit-test-driver.sh])
 
 # System Tests
 

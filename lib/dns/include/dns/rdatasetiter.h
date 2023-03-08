@@ -89,10 +89,11 @@ struct dns_rdatasetiter {
 	/* Unlocked. */
 	unsigned int		   magic;
 	dns_rdatasetitermethods_t *methods;
-	dns_db_t			 *db;
-	dns_dbnode_t		     *node;
-	dns_dbversion_t		*version;
+	dns_db_t		  *db;
+	dns_dbnode_t		  *node;
+	dns_dbversion_t		  *version;
 	isc_stdtime_t		   now;
+	unsigned int		   options;
 };
 
 void
@@ -144,7 +145,7 @@ dns_rdatasetiter_next(dns_rdatasetiter_t *iterator);
 
 void
 dns_rdatasetiter_current(dns_rdatasetiter_t *iterator,
-			 dns_rdataset_t	*rdataset);
+			 dns_rdataset_t	    *rdataset);
 /*%<
  * Return the current rdataset.
  *

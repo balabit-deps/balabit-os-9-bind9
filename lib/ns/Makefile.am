@@ -1,7 +1,7 @@
 include $(top_srcdir)/Makefile.top
 
 AM_CPPFLAGS +=				\
-	-DNAMED_PLUGINDIR=\"$(libdir)/named\"
+	-DNAMED_PLUGINDIR=\"$(pkglibdir)\"
 
 lib_LTLIBRARIES = libns.la
 
@@ -55,7 +55,3 @@ libns_la_LIBADD =	\
 libns_la_LDFLAGS =		\
 	$(AM_LDFLAGS)		\
 	-release "$(PACKAGE_VERSION)"
-
-if HAVE_CMOCKA
-SUBDIRS = tests
-endif

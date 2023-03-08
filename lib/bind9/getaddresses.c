@@ -132,12 +132,13 @@ again:
 			goto again;
 		}
 #endif /* ifdef AI_ADDRCONFIG */
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	default:
 		return (ISC_R_FAILURE);
 	}
 	for (tmpai = ai, i = 0; tmpai != NULL && i < addrsize;
-	     tmpai = tmpai->ai_next) {
+	     tmpai = tmpai->ai_next)
+	{
 		if (tmpai->ai_family != AF_INET && tmpai->ai_family != AF_INET6)
 		{
 			continue;

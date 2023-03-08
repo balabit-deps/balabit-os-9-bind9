@@ -108,7 +108,7 @@
 
 /**************************************************************************/
 
-static inline void
+static void
 inc_stats(ns_client_t *client, dns_zone_t *zone, isc_statscounter_t counter) {
 	ns_stats_increment(client->sctx->nsstats, counter);
 	if (zone != NULL) {
@@ -137,7 +137,8 @@ log_rr(dns_name_t *name, dns_rdata_t *rdata, uint32_t ttl) {
 	rdl.rdclass = rdata->rdclass;
 	rdl.ttl = ttl;
 	if (rdata->type == dns_rdatatype_sig ||
-	    rdata->type == dns_rdatatype_rrsig) {
+	    rdata->type == dns_rdatatype_rrsig)
+	{
 		rdl.covers = dns_rdata_covers(rdata);
 	} else {
 		rdl.covers = dns_rdatatype_none;
@@ -758,8 +759,7 @@ ns_xfr_start(ns_client_t *client, dns_rdatatype_t reqtype) {
 		mnemonic = "IXFR";
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	ns_client_log(client, DNS_LOGCATEGORY_XFER_OUT, NS_LOGMODULE_XFER_OUT,
@@ -1030,7 +1030,7 @@ got_soa:
 		}
 		if (result == ISC_R_NOTFOUND || result == ISC_R_RANGE) {
 			xfrout_log1(client, question_name, question_class,
-				    ISC_LOG_DEBUG(4),
+				    ISC_LOG_INFO,
 				    "IXFR version not in journal, "
 				    "falling back to AXFR");
 			mnemonic = "AXFR-style IXFR";
@@ -1045,7 +1045,7 @@ got_soa:
 				data_stream->methods->destroy(&data_stream);
 				data_stream = NULL;
 				xfrout_log1(client, question_name,
-					    question_class, ISC_LOG_DEBUG(4),
+					    question_class, ISC_LOG_INFO,
 					    "IXFR delta size (%zu bytes) "
 					    "exceeds the maximum ratio to "
 					    "database size "
@@ -1155,7 +1155,7 @@ have_stream:
 
 	/* Start the timers */
 	if (xfr->maxtime > 0) {
-		xfrout_log(xfr, ISC_LOG_ERROR,
+		xfrout_log(xfr, ISC_LOG_DEBUG(1),
 			   "starting maxtime timer %" PRIu64 " ms",
 			   xfr->maxtime);
 		isc_nm_timer_start(xfr->maxtime_timer, xfr->maxtime);
@@ -1499,7 +1499,8 @@ sendstream(xfrout_ctx_t *xfr) {
 		msgrdl->rdclass = rdata->rdclass;
 		msgrdl->ttl = ttl;
 		if (rdata->type == dns_rdatatype_sig ||
-		    rdata->type == dns_rdatatype_rrsig) {
+		    rdata->type == dns_rdatatype_rrsig)
+		{
 			msgrdl->covers = dns_rdata_covers(rdata);
 		} else {
 			msgrdl->covers = dns_rdatatype_none;

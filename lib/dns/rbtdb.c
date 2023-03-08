@@ -13,8 +13,6 @@
 
 /*! \file */
 
-/* #define inline */
-
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdbool.h>
@@ -299,6 +297,7 @@ typedef ISC_LIST(dns_rbtnode_t) rbtnodelist_t;
 #define STATCOUNT(header)                              \
 	((atomic_load_acquire(&(header)->attributes) & \
 	  RDATASET_ATTR_STATCOUNT) != 0)
+#define STALE_TTL(header, rbtdb) (NXDOMAIN(header) ? 0 : rbtdb->serve_stale_ttl)
 
 #define RDATASET_ATTR_GET(header, attribute) \
 	(atomic_load_acquire(&(header)->attributes) & attribute)
@@ -319,12 +318,18 @@ typedef ISC_LIST(dns_rbtnode_t) rbtnodelist_t;
 #define GOLDEN_RATIO_32 0x61C88647
 #define HASHSIZE(bits)	(UINT64_C(1) << (bits))
 
-static inline uint32_t
+static uint32_t
 hash_32(uint32_t val, unsigned int bits) {
 	REQUIRE(bits <= RBTDB_GLUE_TABLE_MAX_BITS);
 	/* High bits are more random. */
 	return (val * GOLDEN_RATIO_32 >> (32 - bits));
 }
+
+#define EXPIREDOK(rbtiterator) \
+	(((rbtiterator)->common.options & DNS_DB_EXPIREDOK) != 0)
+
+#define STALEOK(rbtiterator) \
+	(((rbtiterator)->common.options & DNS_DB_STALEOK) != 0)
 
 /*%
  * Number of buckets for cache DB entries (locks, LRU lists, TTL heaps).
@@ -548,7 +553,7 @@ rdataset_getnoqname(dns_rdataset_t *rdataset, dns_name_t *name,
 static isc_result_t
 rdataset_getclosest(dns_rdataset_t *rdataset, dns_name_t *name,
 		    dns_rdataset_t *neg, dns_rdataset_t *negsig);
-static inline bool
+static bool
 need_headerupdate(rdatasetheader_t *header, isc_stdtime_t now);
 static void
 update_header(dns_rbtdb_t *rbtdb, rdatasetheader_t *header, isc_stdtime_t now);
@@ -558,7 +563,7 @@ expire_header(dns_rbtdb_t *rbtdb, rdatasetheader_t *header, bool tree_locked,
 static void
 overmem_purge(dns_rbtdb_t *rbtdb, unsigned int locknum_start, isc_stdtime_t now,
 	      bool tree_locked);
-static isc_result_t
+static void
 resign_insert(dns_rbtdb_t *rbtdb, int idx, rdatasetheader_t *newheader);
 static void
 resign_delete(dns_rbtdb_t *rbtdb, rbtdb_version_t *version,
@@ -719,7 +724,7 @@ setownercase(rdatasetheader_t *header, const dns_name_t *name);
  *      that indicates that the database does not implement cyclic
  *      processing.
  */
-static atomic_uint_fast32_t init_count = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast32_t init_count = 0;
 
 /*
  * Locking
@@ -791,7 +796,7 @@ update_cachestats(dns_rbtdb_t *rbtdb, isc_result_t result) {
 	case DNS_R_COVERINGNSEC:
 		isc_stats_increment(rbtdb->cachestats,
 				    dns_cachestatscounter_coveringnsec);
-		/* FALLTHROUGH */
+		FALLTHROUGH;
 	case ISC_R_SUCCESS:
 	case DNS_R_CNAME:
 	case DNS_R_DNAME:
@@ -819,7 +824,8 @@ update_rrsetstats(dns_rbtdb_t *rbtdb, const rbtdb_rdatatype_t htype,
 	dns_rdatastatstype_t base = 0;
 	dns_rdatastatstype_t type;
 	rdatasetheader_t *header = &(rdatasetheader_t){
-		.type = htype, .attributes = ATOMIC_VAR_INIT(hattributes)
+		.type = htype,
+		.attributes = hattributes,
 	};
 
 	if (!do_stats(header)) {
@@ -989,7 +995,6 @@ free_rbtdb(dns_rbtdb_t *rbtdb, bool log, isc_event_t *event) {
 	char buf[DNS_NAME_FORMATSIZE];
 	dns_rbt_t **treep;
 	isc_time_t start;
-	dns_dbonupdatelistener_t *listener, *listener_next;
 
 	if (IS_CACHE(rbtdb) && rbtdb->common.rdclass == dns_rdataclass_in) {
 		overmem((dns_db_t *)rbtdb, (bool)-1);
@@ -1142,19 +1147,12 @@ free_rbtdb(dns_rbtdb_t *rbtdb, bool log, isc_event_t *event) {
 	rbtdb->common.impmagic = 0;
 	isc_mem_detach(&rbtdb->hmctx);
 
-	for (listener = ISC_LIST_HEAD(rbtdb->common.update_listeners);
-	     listener != NULL; listener = listener_next)
-	{
-		listener_next = ISC_LIST_NEXT(listener, link);
-		ISC_LIST_UNLINK(rbtdb->common.update_listeners, listener, link);
-		isc_mem_put(rbtdb->common.mctx, listener,
-			    sizeof(dns_dbonupdatelistener_t));
-	}
+	INSIST(ISC_LIST_EMPTY(rbtdb->common.update_listeners));
 
 	isc_mem_putanddetach(&rbtdb->common.mctx, rbtdb, sizeof(*rbtdb));
 }
 
-static inline void
+static void
 maybe_free_rbtdb(dns_rbtdb_t *rbtdb) {
 	bool want_free = false;
 	unsigned int i;
@@ -1241,7 +1239,7 @@ currentversion(dns_db_t *db, dns_dbversion_t **versionp) {
 	*versionp = (dns_dbversion_t *)version;
 }
 
-static inline rbtdb_version_t *
+static rbtdb_version_t *
 allocate_version(isc_mem_t *mctx, rbtdb_serial_t serial,
 		 unsigned int references, bool writer) {
 	rbtdb_version_t *version;
@@ -1358,7 +1356,7 @@ add_changed(dns_rbtdb_t *rbtdb, rbtdb_version_t *version, dns_rbtnode_t *node) {
 	return (changed);
 }
 
-static inline void
+static void
 free_noqname(isc_mem_t *mctx, struct noqname **noqname) {
 	if (dns_name_dynamic(&(*noqname)->name)) {
 		dns_name_free(&(*noqname)->name, mctx);
@@ -1375,7 +1373,7 @@ free_noqname(isc_mem_t *mctx, struct noqname **noqname) {
 	*noqname = NULL;
 }
 
-static inline void
+static void
 init_rdataset(dns_rbtdb_t *rbtdb, rdatasetheader_t *h) {
 	ISC_LINK_INIT(h, link);
 	h->heap_index = 0;
@@ -1406,7 +1404,7 @@ update_newheader(rdatasetheader_t *newh, rdatasetheader_t *old) {
 	}
 }
 
-static inline rdatasetheader_t *
+static rdatasetheader_t *
 new_rdataset(dns_rbtdb_t *rbtdb, isc_mem_t *mctx) {
 	rdatasetheader_t *h;
 
@@ -1423,7 +1421,7 @@ new_rdataset(dns_rbtdb_t *rbtdb, isc_mem_t *mctx) {
 	return (h);
 }
 
-static inline void
+static void
 free_rdataset(dns_rbtdb_t *rbtdb, isc_mem_t *mctx, rdatasetheader_t *rdataset) {
 	unsigned int size;
 	int idx;
@@ -1459,7 +1457,7 @@ free_rdataset(dns_rbtdb_t *rbtdb, isc_mem_t *mctx, rdatasetheader_t *rdataset) {
 	isc_mem_put(mctx, rdataset, size);
 }
 
-static inline void
+static void
 rollback_node(dns_rbtnode_t *node, rbtdb_serial_t serial) {
 	rdatasetheader_t *header, *dcurrent;
 	bool make_dirty = false;
@@ -1479,7 +1477,8 @@ rollback_node(dns_rbtnode_t *node, rbtdb_serial_t serial) {
 			make_dirty = true;
 		}
 		for (dcurrent = header->down; dcurrent != NULL;
-		     dcurrent = dcurrent->down) {
+		     dcurrent = dcurrent->down)
+		{
 			if (dcurrent->serial == serial) {
 				RDATASET_ATTR_SET(dcurrent,
 						  RDATASET_ATTR_IGNORE);
@@ -1492,7 +1491,7 @@ rollback_node(dns_rbtnode_t *node, rbtdb_serial_t serial) {
 	}
 }
 
-static inline void
+static void
 mark_header_ancient(dns_rbtdb_t *rbtdb, rdatasetheader_t *header) {
 	uint_least16_t attributes = atomic_load_acquire(&header->attributes);
 	uint_least16_t newattributes = 0;
@@ -1521,7 +1520,7 @@ mark_header_ancient(dns_rbtdb_t *rbtdb, rdatasetheader_t *header) {
 	update_rrsetstats(rbtdb, header->type, newattributes, true);
 }
 
-static inline void
+static void
 mark_header_stale(dns_rbtdb_t *rbtdb, rdatasetheader_t *header) {
 	uint_least16_t attributes = atomic_load_acquire(&header->attributes);
 	uint_least16_t newattributes = 0;
@@ -1550,7 +1549,7 @@ mark_header_stale(dns_rbtdb_t *rbtdb, rdatasetheader_t *header) {
 	update_rrsetstats(rbtdb, header->type, newattributes, true);
 }
 
-static inline void
+static void
 clean_stale_headers(dns_rbtdb_t *rbtdb, isc_mem_t *mctx,
 		    rdatasetheader_t *top) {
 	rdatasetheader_t *d, *down_next;
@@ -1562,7 +1561,7 @@ clean_stale_headers(dns_rbtdb_t *rbtdb, isc_mem_t *mctx,
 	top->down = NULL;
 }
 
-static inline void
+static void
 clean_cache_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node) {
 	rdatasetheader_t *current, *top_prev, *top_next;
 	isc_mem_t *mctx = rbtdb->common.mctx;
@@ -1595,7 +1594,7 @@ clean_cache_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node) {
 	node->dirty = 0;
 }
 
-static inline void
+static void
 clean_zone_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		rbtdb_serial_t least_serial) {
 	rdatasetheader_t *current, *dcurrent, *down_next, *dparent;
@@ -1619,11 +1618,13 @@ clean_zone_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		 */
 		dparent = current;
 		for (dcurrent = current->down; dcurrent != NULL;
-		     dcurrent = down_next) {
+		     dcurrent = down_next)
+		{
 			down_next = dcurrent->down;
 			INSIST(dcurrent->serial <= dparent->serial);
 			if (dcurrent->serial == dparent->serial ||
-			    IGNORE(dcurrent)) {
+			    IGNORE(dcurrent))
+			{
 				if (down_next != NULL) {
 					down_next->next = dparent;
 				}
@@ -1674,7 +1675,8 @@ clean_zone_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		 */
 		dparent = current;
 		for (dcurrent = current->down; dcurrent != NULL;
-		     dcurrent = down_next) {
+		     dcurrent = down_next)
+		{
 			down_next = dcurrent->down;
 			if (dcurrent->serial < least_serial) {
 				break;
@@ -1806,7 +1808,7 @@ delete_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node) {
 /*
  * Caller must be holding the node lock.
  */
-static inline void
+static void
 new_reference(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 	      isc_rwlocktype_t locktype) {
 	if (locktype == isc_rwlocktype_write && ISC_LINK_LINKED(node, deadlink))
@@ -1824,13 +1826,13 @@ new_reference(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 /*%
  * The tree lock must be held for the result to be valid.
  */
-static inline bool
+static bool
 is_leaf(dns_rbtnode_t *node) {
 	return (node->parent != NULL && node->parent->down == node &&
 		node->left == NULL && node->right == NULL);
 }
 
-static inline void
+static void
 send_to_prune_tree(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		   isc_rwlocktype_t locktype) {
 	isc_event_t *ev;
@@ -1868,7 +1870,8 @@ cleanup_dead_nodes(dns_rbtdb_t *rbtdb, int bucketnum) {
 		 * and we have to do it now.
 		 */
 		if (isc_refcount_current(&node->references) != 0 ||
-		    node->data != NULL) {
+		    node->data != NULL)
+		{
 			node = ISC_LIST_HEAD(rbtdb->deadnodes[bucketnum]);
 			count--;
 			continue;
@@ -1905,7 +1908,7 @@ cleanup_dead_nodes(dns_rbtdb_t *rbtdb, int bucketnum) {
  * few cases where the node can be in the deadnode list (only empty nodes can
  * have been added to the list).
  */
-static inline void
+static void
 reactivate_node(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		isc_rwlocktype_t treelocktype) {
 	isc_rwlocktype_t locktype = isc_rwlocktype_read;
@@ -2177,7 +2180,7 @@ prune_tree(isc_task_t *task, isc_event_t *event) {
 	detach((dns_db_t **)&rbtdb);
 }
 
-static inline void
+static void
 make_least_version(dns_rbtdb_t *rbtdb, rbtdb_version_t *version,
 		   rbtdb_changedlist_t *cleanup_list) {
 	/*
@@ -2189,7 +2192,7 @@ make_least_version(dns_rbtdb_t *rbtdb, rbtdb_version_t *version,
 	ISC_LIST_INIT(version->changed_list);
 }
 
-static inline void
+static void
 cleanup_nondirty(rbtdb_version_t *version, rbtdb_changedlist_t *cleanup_list) {
 	rbtdb_changed_t *changed, *next_changed;
 
@@ -2297,7 +2300,8 @@ setnsec3parameters(dns_db_t *db, rbtdb_version_t *version) {
 		header_next = header->next;
 		do {
 			if (header->serial <= version->serial &&
-			    !IGNORE(header)) {
+			    !IGNORE(header))
+			{
 				if (NONEXISTENT(header)) {
 					header = NULL;
 				}
@@ -2308,7 +2312,8 @@ setnsec3parameters(dns_db_t *db, rbtdb_version_t *version) {
 		} while (header != NULL);
 
 		if (header != NULL &&
-		    (header->type == dns_rdatatype_nsec3param)) {
+		    (header->type == dns_rdatatype_nsec3param))
+		{
 			/*
 			 * Find A NSEC3PARAM with a supported algorithm.
 			 */
@@ -2579,7 +2584,8 @@ closeversion(dns_db_t *db, dns_dbversion_t **versionp, bool commit) {
 	 * Commit/rollback re-signed headers.
 	 */
 	for (header = HEAD(resigned_list); header != NULL;
-	     header = HEAD(resigned_list)) {
+	     header = HEAD(resigned_list))
+	{
 		nodelock_t *lock;
 
 		ISC_LIST_UNLINK(resigned_list, header, link);
@@ -2587,17 +2593,7 @@ closeversion(dns_db_t *db, dns_dbversion_t **versionp, bool commit) {
 		lock = &rbtdb->node_locks[header->node->locknum].lock;
 		NODE_LOCK(lock, isc_rwlocktype_write);
 		if (rollback && !IGNORE(header)) {
-			isc_result_t result;
-			result = resign_insert(rbtdb, header->node->locknum,
-					       header);
-			if (result != ISC_R_SUCCESS) {
-				isc_log_write(dns_lctx,
-					      DNS_LOGCATEGORY_DATABASE,
-					      DNS_LOGMODULE_ZONE, ISC_LOG_ERROR,
-					      "Unable to reinsert header to "
-					      "re-signing heap: %s",
-					      isc_result_totext(result));
-			}
+			resign_insert(rbtdb, header->node->locknum, header);
 		}
 		decrement_reference(rbtdb, header->node, least_serial,
 				    isc_rwlocktype_write, isc_rwlocktype_none,
@@ -2630,7 +2626,8 @@ closeversion(dns_db_t *db, dns_dbversion_t **versionp, bool commit) {
 		}
 
 		for (changed = HEAD(cleanup_list); changed != NULL;
-		     changed = next_changed) {
+		     changed = next_changed)
+		{
 			nodelock_t *lock;
 
 			next_changed = NEXT(changed, link);
@@ -2685,7 +2682,7 @@ end:
  * tree_lock(write) must be held.
  */
 static isc_result_t
-add_wildcard_magic(dns_rbtdb_t *rbtdb, const dns_name_t *name) {
+add_wildcard_magic(dns_rbtdb_t *rbtdb, const dns_name_t *name, bool lock) {
 	isc_result_t result;
 	dns_name_t foundname;
 	dns_offsets_t offsets;
@@ -2705,7 +2702,15 @@ add_wildcard_magic(dns_rbtdb_t *rbtdb, const dns_name_t *name) {
 		node->nsec = DNS_RBT_NSEC_NORMAL;
 	}
 	node->find_callback = 1;
+	if (lock) {
+		NODE_LOCK(&rbtdb->node_locks[node->locknum].lock,
+			  isc_rwlocktype_write);
+	}
 	node->wild = 1;
+	if (lock) {
+		NODE_UNLOCK(&rbtdb->node_locks[node->locknum].lock,
+			    isc_rwlocktype_write);
+	}
 	return (ISC_R_SUCCESS);
 }
 
@@ -2713,7 +2718,7 @@ add_wildcard_magic(dns_rbtdb_t *rbtdb, const dns_name_t *name) {
  * tree_lock(write) must be held.
  */
 static isc_result_t
-add_empty_wildcards(dns_rbtdb_t *rbtdb, const dns_name_t *name) {
+add_empty_wildcards(dns_rbtdb_t *rbtdb, const dns_name_t *name, bool lock) {
 	isc_result_t result;
 	dns_name_t foundname;
 	dns_offsets_t offsets;
@@ -2727,7 +2732,7 @@ add_empty_wildcards(dns_rbtdb_t *rbtdb, const dns_name_t *name) {
 		dns_rbtnode_t *node = NULL; /* dummy */
 		dns_name_getlabelsequence(name, n - i, i, &foundname);
 		if (dns_name_iswildcard(&foundname)) {
-			result = add_wildcard_magic(rbtdb, &foundname);
+			result = add_wildcard_magic(rbtdb, &foundname, lock);
 			if (result != ISC_R_SUCCESS) {
 				return (result);
 			}
@@ -2779,11 +2784,11 @@ findnodeintree(dns_rbtdb_t *rbtdb, dns_rbt_t *tree, const dns_name_t *name,
 			dns_rbt_namefromnode(node, &nodename);
 			node->locknum = node->hashval % rbtdb->node_lock_count;
 			if (tree == rbtdb->tree) {
-				add_empty_wildcards(rbtdb, name);
+				add_empty_wildcards(rbtdb, name, true);
 
 				if (dns_name_iswildcard(name)) {
-					result = add_wildcard_magic(rbtdb,
-								    name);
+					result = add_wildcard_magic(rbtdb, name,
+								    true);
 					if (result != ISC_R_SUCCESS) {
 						RWUNLOCK(&rbtdb->tree_lock,
 							 locktype);
@@ -2872,7 +2877,8 @@ zone_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 		{
 			do {
 				if (header->serial <= search->serial &&
-				    !IGNORE(header)) {
+				    !IGNORE(header))
+				{
 					/*
 					 * Is this a "this rdataset doesn't
 					 * exist" record?
@@ -2889,10 +2895,12 @@ zone_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 				if (header->type == dns_rdatatype_dname) {
 					dname_header = header;
 				} else if (header->type ==
-					   RBTDB_RDATATYPE_SIGDNAME) {
+					   RBTDB_RDATATYPE_SIGDNAME)
+				{
 					sigdname_header = header;
 				} else if (node != onode ||
-					   IS_STUB(search->rbtdb)) {
+					   IS_STUB(search->rbtdb))
+				{
 					/*
 					 * We've found an NS rdataset that
 					 * isn't at the origin node.  We check
@@ -2911,7 +2919,8 @@ zone_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 	 * Did we find anything?
 	 */
 	if (!IS_CACHE(search->rbtdb) && !IS_STUB(search->rbtdb) &&
-	    ns_header != NULL) {
+	    ns_header != NULL)
+	{
 		/*
 		 * Note that NS has precedence over DNAME if both exist
 		 * in a zone.  Otherwise DNAME take precedence over NS.
@@ -2981,7 +2990,7 @@ zone_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 	return (result);
 }
 
-static inline void
+static void
 bind_rdataset(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node, rdatasetheader_t *header,
 	      isc_stdtime_t now, isc_rwlocktype_t locktype,
 	      dns_rdataset_t *rdataset) {
@@ -3009,7 +3018,8 @@ bind_rdataset(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node, rdatasetheader_t *header,
 	 * Mark header stale or ancient if the RRset is no longer active.
 	 */
 	if (!ACTIVE(header, now)) {
-		dns_ttl_t stale_ttl = header->rdh_ttl + rbtdb->serve_stale_ttl;
+		dns_ttl_t stale_ttl = header->rdh_ttl +
+				      STALE_TTL(header, rbtdb);
 		/*
 		 * If this data is in the stale window keep it and if
 		 * DNS_DBFIND_STALEOK is not set we tell the caller to
@@ -3049,7 +3059,8 @@ bind_rdataset(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node, rdatasetheader_t *header,
 	}
 
 	if (stale && !ancient) {
-		dns_ttl_t stale_ttl = header->rdh_ttl + rbtdb->serve_stale_ttl;
+		dns_ttl_t stale_ttl = header->rdh_ttl +
+				      STALE_TTL(header, rbtdb);
 		if (stale_ttl > now) {
 			rdataset->ttl = stale_ttl - now;
 		} else {
@@ -3102,7 +3113,7 @@ bind_rdataset(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node, rdatasetheader_t *header,
 	}
 }
 
-static inline isc_result_t
+static isc_result_t
 setup_delegation(rbtdb_search_t *search, dns_dbnode_t **nodep,
 		 dns_name_t *foundname, dns_rdataset_t *rdataset,
 		 dns_rdataset_t *sigrdataset) {
@@ -3162,7 +3173,7 @@ setup_delegation(rbtdb_search_t *search, dns_dbnode_t **nodep,
 	return (DNS_R_DELEGATION);
 }
 
-static inline bool
+static bool
 valid_glue(rbtdb_search_t *search, dns_name_t *name, rbtdb_rdatatype_t type,
 	   dns_rbtnode_t *node) {
 	unsigned char *raw; /* RDATASLAB */
@@ -3218,7 +3229,7 @@ valid_glue(rbtdb_search_t *search, dns_name_t *name, rbtdb_rdatatype_t type,
 	return (valid);
 }
 
-static inline bool
+static bool
 activeempty(rbtdb_search_t *search, dns_rbtnodechain_t *chain,
 	    const dns_name_t *name) {
 	dns_fixedname_t fnext;
@@ -3251,7 +3262,8 @@ activeempty(rbtdb_search_t *search, dns_rbtnodechain_t *chain,
 		for (header = node->data; header != NULL; header = header->next)
 		{
 			if (header->serial <= search->serial &&
-			    !IGNORE(header) && EXISTS(header)) {
+			    !IGNORE(header) && EXISTS(header))
+			{
 				break;
 			}
 		}
@@ -3271,7 +3283,7 @@ activeempty(rbtdb_search_t *search, dns_rbtnodechain_t *chain,
 	return (answer);
 }
 
-static inline bool
+static bool
 activeemptynode(rbtdb_search_t *search, const dns_name_t *qname,
 		dns_name_t *wname) {
 	dns_fixedname_t fnext;
@@ -3319,7 +3331,8 @@ activeemptynode(rbtdb_search_t *search, const dns_name_t *qname,
 		for (header = node->data; header != NULL; header = header->next)
 		{
 			if (header->serial <= search->serial &&
-			    !IGNORE(header) && EXISTS(header)) {
+			    !IGNORE(header) && EXISTS(header))
+			{
 				break;
 			}
 		}
@@ -3349,7 +3362,8 @@ activeemptynode(rbtdb_search_t *search, const dns_name_t *qname,
 		for (header = node->data; header != NULL; header = header->next)
 		{
 			if (header->serial <= search->serial &&
-			    !IGNORE(header) && EXISTS(header)) {
+			    !IGNORE(header) && EXISTS(header))
+			{
 				break;
 			}
 		}
@@ -3391,7 +3405,7 @@ activeemptynode(rbtdb_search_t *search, const dns_name_t *qname,
 	return (answer);
 }
 
-static inline isc_result_t
+static isc_result_t
 find_wildcard(rbtdb_search_t *search, dns_rbtnode_t **nodep,
 	      const dns_name_t *qname) {
 	unsigned int i, j;
@@ -3496,7 +3510,8 @@ find_wildcard(rbtdb_search_t *search, dns_rbtnode_t **nodep,
 				lock = &rbtdb->node_locks[wnode->locknum].lock;
 				NODE_LOCK(lock, isc_rwlocktype_read);
 				for (header = wnode->data; header != NULL;
-				     header = header->next) {
+				     header = header->next)
+				{
 					if (header->serial <= search->serial &&
 					    !IGNORE(header) && EXISTS(header) &&
 					    !ANCIENT(header))
@@ -3506,9 +3521,11 @@ find_wildcard(rbtdb_search_t *search, dns_rbtnode_t **nodep,
 				}
 				NODE_UNLOCK(lock, isc_rwlocktype_read);
 				if (header != NULL ||
-				    activeempty(search, &wchain, wname)) {
+				    activeempty(search, &wchain, wname))
+				{
 					if (activeemptynode(search, qname,
-							    wname)) {
+							    wname))
+					{
 						return (ISC_R_NOTFOUND);
 					}
 					/*
@@ -3521,7 +3538,8 @@ find_wildcard(rbtdb_search_t *search, dns_rbtnode_t **nodep,
 					break;
 				}
 			} else if (result != ISC_R_NOTFOUND &&
-				   result != DNS_R_PARTIALMATCH) {
+				   result != DNS_R_PARTIALMATCH)
+			{
 				/*
 				 * An error has occurred.  Bail out.
 				 */
@@ -3591,7 +3609,7 @@ matchparams(rdatasetheader_t *header, rbtdb_search_t *search) {
 /*
  * Find node of the NSEC/NSEC3 record that is 'name'.
  */
-static inline isc_result_t
+static isc_result_t
 previous_closest_nsec(dns_rdatatype_t type, rbtdb_search_t *search,
 		      dns_name_t *name, dns_name_t *origin,
 		      dns_rbtnode_t **nodep, dns_rbtnodechain_t *nsecchain,
@@ -3647,7 +3665,8 @@ previous_closest_nsec(dns_rdatatype_t type, rbtdb_search_t *search,
 					result = ISC_R_SUCCESS;
 				}
 			} else if (result == ISC_R_NOTFOUND ||
-				   result == DNS_R_PARTIALMATCH) {
+				   result == DNS_R_PARTIALMATCH)
+			{
 				result = dns_rbtnodechain_current(
 					nsecchain, name, origin, NULL);
 				if (result == ISC_R_NOTFOUND) {
@@ -3707,7 +3726,7 @@ previous_closest_nsec(dns_rdatatype_t type, rbtdb_search_t *search,
  * search chain.  For NSEC3 records only NSEC3 records that match the
  * current NSEC3PARAM record are considered.
  */
-static inline isc_result_t
+static isc_result_t
 find_closest_nsec(rbtdb_search_t *search, dns_dbnode_t **nodep,
 		  dns_name_t *foundname, dns_rdataset_t *rdataset,
 		  dns_rdataset_t *sigrdataset, dns_rbt_t *tree,
@@ -3762,7 +3781,8 @@ again:
 			 */
 			do {
 				if (header->serial <= search->serial &&
-				    !IGNORE(header)) {
+				    !IGNORE(header))
+				{
 					/*
 					 * Is this a "this rdataset doesn't
 					 * exist" record?
@@ -3806,7 +3826,8 @@ again:
 					type, search, name, origin, &prevnode,
 					NULL, NULL);
 			} else if (found != NULL &&
-				   (foundsig != NULL || !need_sig)) {
+				   (foundsig != NULL || !need_sig))
+			{
 				/*
 				 * We've found the right NSEC/NSEC3 record.
 				 *
@@ -4155,7 +4176,8 @@ found:
 			 * we are using behave as if it isn't here.
 			 */
 			if (header->type == dns_rdatatype_nsec3 &&
-			    !matchparams(header, &search)) {
+			    !matchparams(header, &search))
+			{
 				NODE_UNLOCK(lock, isc_rwlocktype_read);
 				goto partial_match;
 			}
@@ -4171,7 +4193,8 @@ found:
 				 */
 				found = header;
 				if (header->type == dns_rdatatype_cname &&
-				    cname_ok) {
+				    cname_ok)
+				{
 					/*
 					 * We may be finding a CNAME instead
 					 * of the desired type.
@@ -4206,7 +4229,8 @@ found:
 					break;
 				}
 			} else if (header->type == dns_rdatatype_nsec &&
-				   !search.rbtversion->havensec3) {
+				   !search.rbtversion->havensec3)
+			{
 				/*
 				 * Remember a NSEC rdataset even if we're
 				 * not specifically looking for it, because
@@ -4222,7 +4246,8 @@ found:
 				 */
 				nsecsig = header;
 			} else if (cname_ok &&
-				   header->type == RBTDB_RDATATYPE_SIGCNAME) {
+				   header->type == RBTDB_RDATATYPE_SIGCNAME)
+			{
 				/*
 				 * If we get a CNAME match, we'll also need
 				 * its signature.
@@ -4289,7 +4314,8 @@ found:
 			goto tree_exit;
 		}
 		if ((search.options & DNS_DBFIND_FORCENSEC) != 0 &&
-		    nsecheader == NULL) {
+		    nsecheader == NULL)
+		{
 			/*
 			 * There's no NSEC record, and we were told
 			 * to find one.
@@ -4447,9 +4473,9 @@ zone_findzonecut(dns_db_t *db, const dns_name_t *name, unsigned int options,
 	UNUSED(rdataset);
 	UNUSED(sigrdataset);
 
-	FATAL_ERROR(__FILE__, __LINE__, "zone_findzonecut() called!");
+	FATAL_ERROR("zone_findzonecut() called!");
 
-	/* NOTREACHED */
+	UNREACHABLE();
 	return (ISC_R_NOTIMPLEMENTED);
 }
 
@@ -4459,7 +4485,7 @@ check_stale_header(dns_rbtnode_t *node, rdatasetheader_t *header,
 		   rbtdb_search_t *search, rdatasetheader_t **header_prev) {
 	if (!ACTIVE(header, search->now)) {
 		dns_ttl_t stale = header->rdh_ttl +
-				  search->rbtdb->serve_stale_ttl;
+				  STALE_TTL(header, search->rbtdb);
 		/*
 		 * If this data is in the stale window keep it and if
 		 * DNS_DBFIND_STALEOK is not set we tell the caller to
@@ -4469,7 +4495,8 @@ check_stale_header(dns_rbtnode_t *node, rdatasetheader_t *header,
 
 		RDATASET_ATTR_CLR(header, RDATASET_ATTR_STALE_WINDOW);
 		if (!ZEROTTL(header) && KEEPSTALE(search->rbtdb) &&
-		    stale > search->now) {
+		    stale > search->now)
+		{
 			mark_header_stale(search->rbtdb, header);
 			*header_prev = header;
 			/*
@@ -4499,7 +4526,8 @@ check_stale_header(dns_rbtnode_t *node, rdatasetheader_t *header,
 						  RDATASET_ATTR_STALE_WINDOW);
 				return (false);
 			} else if ((search->options &
-				    DNS_DBFIND_STALETIMEOUT) != 0) {
+				    DNS_DBFIND_STALETIMEOUT) != 0)
+			{
 				/*
 				 * We want stale RRset due to timeout, so we
 				 * don't skip it.
@@ -4592,7 +4620,8 @@ cache_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 	for (header = node->data; header != NULL; header = header_next) {
 		header_next = header->next;
 		if (check_stale_header(node, header, &locktype, lock, search,
-				       &header_prev)) {
+				       &header_prev))
+		{
 			/* Do nothing. */
 		} else if (header->type == dns_rdatatype_dname &&
 			   EXISTS(header) && !ANCIENT(header))
@@ -4632,7 +4661,7 @@ cache_zonecut_callback(dns_rbtnode_t *node, dns_name_t *name, void *arg) {
 	return (result);
 }
 
-static inline isc_result_t
+static isc_result_t
 find_deepest_zonecut(rbtdb_search_t *search, dns_rbtnode_t *node,
 		     dns_dbnode_t **nodep, dns_name_t *foundname,
 		     dns_rdataset_t *rdataset, dns_rdataset_t *sigrdataset) {
@@ -4669,7 +4698,8 @@ find_deepest_zonecut(rbtdb_search_t *search, dns_rbtnode_t *node,
 		{
 			header_next = header->next;
 			if (check_stale_header(node, header, &locktype, lock,
-					       search, &header_prev)) {
+					       search, &header_prev))
+			{
 				/* Do nothing. */
 			} else if (EXISTS(header) && !ANCIENT(header)) {
 				/*
@@ -4682,7 +4712,8 @@ find_deepest_zonecut(rbtdb_search_t *search, dns_rbtnode_t *node,
 						break;
 					}
 				} else if (header->type ==
-					   RBTDB_RDATATYPE_SIGNS) {
+					   RBTDB_RDATATYPE_SIGNS)
+				{
 					foundsig = header;
 					if (found != NULL) {
 						break;
@@ -4750,7 +4781,8 @@ find_deepest_zonecut(rbtdb_search_t *search, dns_rbtnode_t *node,
 						      search->now);
 				}
 				if (foundsig != NULL &&
-				    need_headerupdate(foundsig, search->now)) {
+				    need_headerupdate(foundsig, search->now))
+				{
 					update_header(search->rbtdb, foundsig,
 						      search->now);
 				}
@@ -4847,11 +4879,13 @@ find_coveringnsec(rbtdb_search_t *search, const dns_name_t *name,
 	for (header = node->data; header != NULL; header = header_next) {
 		header_next = header->next;
 		if (check_stale_header(node, header, &locktype, lock, search,
-				       &header_prev)) {
+				       &header_prev))
+		{
 			continue;
 		}
 		if (NONEXISTENT(header) ||
-		    RBTDB_RDATATYPE_BASE(header->type) == 0) {
+		    RBTDB_RDATATYPE_BASE(header->type) == 0)
+		{
 			header_prev = header;
 			continue;
 		}
@@ -5010,7 +5044,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 	for (header = node->data; header != NULL; header = header_next) {
 		header_next = header->next;
 		if (check_stale_header(node, header, &locktype, lock, &search,
-				       &header_prev)) {
+				       &header_prev))
+		{
 			/* Do nothing. */
 		} else if (EXISTS(header) && !ANCIENT(header)) {
 			/*
@@ -5019,7 +5054,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 			 */
 			empty_node = false;
 			if (header->noqname != NULL &&
-			    header->trust == dns_trust_secure) {
+			    header->trust == dns_trust_secure)
+			{
 				found_noqname = true;
 			}
 			if (!NEGATIVE(header)) {
@@ -5040,7 +5076,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 				 */
 				found = header;
 				if (header->type == dns_rdatatype_cname &&
-				    cname_ok && cnamesig != NULL) {
+				    cname_ok && cnamesig != NULL)
+				{
 					/*
 					 * If we've already got the
 					 * CNAME RRSIG, use it.
@@ -5054,7 +5091,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 				 */
 				foundsig = header;
 			} else if (header->type == RBTDB_RDATATYPE_NCACHEANY ||
-				   header->type == negtype) {
+				   header->type == negtype)
+			{
 				/*
 				 * We've found a negative cache entry.
 				 */
@@ -5077,7 +5115,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 			} else if (header->type == RBTDB_RDATATYPE_SIGNSEC) {
 				nsecsig = header;
 			} else if (cname_ok &&
-				   header->type == RBTDB_RDATATYPE_SIGCNAME) {
+				   header->type == RBTDB_RDATATYPE_SIGCNAME)
+			{
 				/*
 				 * If we get a CNAME match, we'll also need
 				 * its signature.
@@ -5123,7 +5162,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 		 * Return covering NODATA NSEC record.
 		 */
 		if ((search.options & DNS_DBFIND_COVERINGNSEC) != 0 &&
-		    nsecheader != NULL) {
+		    nsecheader != NULL)
+		{
 			if (nodep != NULL) {
 				new_reference(search.rbtdb, node, locktype);
 				*nodep = node;
@@ -5247,7 +5287,8 @@ cache_find(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 
 node_exit:
 	if ((update != NULL || updatesig != NULL) &&
-	    locktype != isc_rwlocktype_write) {
+	    locktype != isc_rwlocktype_write)
+	{
 		NODE_UNLOCK(lock, locktype);
 		NODE_LOCK(lock, isc_rwlocktype_write);
 		locktype = isc_rwlocktype_write;
@@ -5360,7 +5401,8 @@ cache_findzonecut(dns_db_t *db, const dns_name_t *name, unsigned int options,
 	for (header = node->data; header != NULL; header = header_next) {
 		header_next = header->next;
 		if (check_stale_header(node, header, &locktype, lock, &search,
-				       &header_prev)) {
+				       &header_prev))
+		{
 			/*
 			 * The function dns_rbt_findnode found us the a matching
 			 * node for 'name' and stored the result in 'dcname'.
@@ -5491,7 +5533,8 @@ detachnode(dns_db_t *db, dns_dbnode_t **targetp) {
 				isc_rwlocktype_none, false))
 	{
 		if (isc_refcount_current(&nodelock->references) == 0 &&
-		    nodelock->exiting) {
+		    nodelock->exiting)
+		{
 			inactive = true;
 		}
 	}
@@ -5580,8 +5623,9 @@ expirenode(dns_db_t *db, dns_dbnode_t *node, isc_stdtime_t now) {
 		  isc_rwlocktype_write);
 
 	for (header = rbtnode->data; header != NULL; header = header->next) {
-		if (header->rdh_ttl + rbtdb->serve_stale_ttl <=
-		    now - RBTDB_VIRTUAL) {
+		if (header->rdh_ttl + STALE_TTL(header, rbtdb) <=
+		    now - RBTDB_VIRTUAL)
+		{
 			/*
 			 * We don't check if refcurrent(rbtnode) == 0 and try
 			 * to free like we do in cache_find(), because
@@ -5645,7 +5689,8 @@ printnode(dns_db_t *db, dns_dbnode_t *node, FILE *out) {
 		rdatasetheader_t *current, *top_next;
 
 		for (current = rbtnode->data; current != NULL;
-		     current = top_next) {
+		     current = top_next)
+		{
 			top_next = current->next;
 			first = true;
 			fprintf(out, "\ttype %u", current->type);
@@ -5852,7 +5897,7 @@ cache_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 	for (header = rbtnode->data; header != NULL; header = header_next) {
 		header_next = header->next;
 		if (!ACTIVE(header, now)) {
-			if ((header->rdh_ttl + rbtdb->serve_stale_ttl <
+			if ((header->rdh_ttl + STALE_TTL(header, rbtdb) <
 			     now - RBTDB_VIRTUAL) &&
 			    (locktype == isc_rwlocktype_write ||
 			     NODE_TRYUPGRADE(lock) == ISC_R_SUCCESS))
@@ -5876,7 +5921,8 @@ cache_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 			if (header->type == matchtype) {
 				found = header;
 			} else if (header->type == RBTDB_RDATATYPE_NCACHEANY ||
-				   header->type == negtype) {
+				   header->type == negtype)
+			{
 				found = header;
 			} else if (header->type == sigmatchtype) {
 				foundsig = header;
@@ -5915,7 +5961,8 @@ cache_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 
 static isc_result_t
 allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
-	     isc_stdtime_t now, dns_rdatasetiter_t **iteratorp) {
+	     unsigned int options, isc_stdtime_t now,
+	     dns_rdatasetiter_t **iteratorp) {
 	dns_rbtdb_t *rbtdb = (dns_rbtdb_t *)db;
 	dns_rbtnode_t *rbtnode = (dns_rbtnode_t *)node;
 	rbtdb_version_t *rbtversion = version;
@@ -5947,6 +5994,7 @@ allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 	iterator->common.db = db;
 	iterator->common.node = node;
 	iterator->common.version = (dns_dbversion_t *)rbtversion;
+	iterator->common.options = options;
 	iterator->common.now = now;
 
 	isc_refcount_increment(&rbtnode->references);
@@ -6015,7 +6063,8 @@ cname_and_other_data(dns_rbtnode_t *node, rbtdb_serial_t serial) {
 				 */
 				do {
 					if (header->serial <= serial &&
-					    !IGNORE(header)) {
+					    !IGNORE(header))
+					{
 						/*
 						 * Is this a "this rdataset
 						 * doesn't exist" record?
@@ -6042,16 +6091,13 @@ cname_and_other_data(dns_rbtnode_t *node, rbtdb_serial_t serial) {
 	return (false);
 }
 
-static isc_result_t
+static void
 resign_insert(dns_rbtdb_t *rbtdb, int idx, rdatasetheader_t *newheader) {
-	isc_result_t result;
-
 	INSIST(!IS_CACHE(rbtdb));
 	INSIST(newheader->heap_index == 0);
 	INSIST(!ISC_LINK_LINKED(newheader, link));
 
-	result = isc_heap_insert(rbtdb->heaps[idx], newheader);
-	return (result);
+	isc_heap_insert(rbtdb->heaps[idx], newheader);
 }
 
 /*
@@ -6075,7 +6121,7 @@ resign_delete(dns_rbtdb_t *rbtdb, rbtdb_version_t *version,
 	}
 }
 
-static inline uint64_t
+static uint64_t
 recordsize(rdatasetheader_t *header, unsigned int namelen) {
 	return (dns_rdataslab_rdatasize((unsigned char *)header,
 					sizeof(*header)) +
@@ -6179,7 +6225,8 @@ add32(dns_rbtdb_t *rbtdb, dns_rbtnode_t *rbtnode, const dns_name_t *nodename,
 				 */
 				for (topheader = rbtnode->data;
 				     topheader != NULL;
-				     topheader = topheader->next) {
+				     topheader = topheader->next)
+				{
 					set_ttl(rbtdb, topheader, 0);
 					mark_header_ancient(rbtdb, topheader);
 				}
@@ -6190,7 +6237,8 @@ add32(dns_rbtdb_t *rbtdb, dns_rbtnode_t *rbtnode, const dns_name_t *nodename,
 			 * type so they can be marked ancient later.
 			 */
 			for (topheader = rbtnode->data; topheader != NULL;
-			     topheader = topheader->next) {
+			     topheader = topheader->next)
+			{
 				if (topheader->type == sigtype) {
 					sigheader = topheader;
 				}
@@ -6206,7 +6254,8 @@ add32(dns_rbtdb_t *rbtdb, dns_rbtnode_t *rbtnode, const dns_name_t *nodename,
 			 * entry which covers the same type as the RRSIG.
 			 */
 			for (topheader = rbtnode->data; topheader != NULL;
-			     topheader = topheader->next) {
+			     topheader = topheader->next)
+			{
 				if ((topheader->type ==
 				     RBTDB_RDATATYPE_NCACHEANY) ||
 				    (newheader->type == sigtype &&
@@ -6217,7 +6266,8 @@ add32(dns_rbtdb_t *rbtdb, dns_rbtnode_t *rbtnode, const dns_name_t *nodename,
 				}
 			}
 			if (topheader != NULL && EXISTS(topheader) &&
-			    ACTIVE(topheader, now)) {
+			    ACTIVE(topheader, now))
+			{
 				/*
 				 * Found one.
 				 */
@@ -6251,9 +6301,11 @@ add32(dns_rbtdb_t *rbtdb, dns_rbtnode_t *rbtnode, const dns_name_t *nodename,
 	}
 
 	for (topheader = rbtnode->data; topheader != NULL;
-	     topheader = topheader->next) {
+	     topheader = topheader->next)
+	{
 		if (topheader->type == newheader->type ||
-		    topheader->type == negtype) {
+		    topheader->type == negtype)
+		{
 			break;
 		}
 		topheader_prev = topheader;
@@ -6393,12 +6445,14 @@ find_header:
 				set_ttl(rbtdb, header, newheader->rdh_ttl);
 			}
 			if (header->noqname == NULL &&
-			    newheader->noqname != NULL) {
+			    newheader->noqname != NULL)
+			{
 				header->noqname = newheader->noqname;
 				newheader->noqname = NULL;
 			}
 			if (header->closest == NULL &&
-			    newheader->closest != NULL) {
+			    newheader->closest != NULL)
+			{
 				header->closest = newheader->closest;
 				newheader->closest = NULL;
 			}
@@ -6443,12 +6497,14 @@ find_header:
 				set_ttl(rbtdb, header, newheader->rdh_ttl);
 			}
 			if (header->noqname == NULL &&
-			    newheader->noqname != NULL) {
+			    newheader->noqname != NULL)
+			{
 				header->noqname = newheader->noqname;
 				newheader->noqname = NULL;
 			}
 			if (header->closest == NULL &&
-			    newheader->closest != NULL) {
+			    newheader->closest != NULL)
+			{
 				header->closest = newheader->closest;
 				newheader->closest = NULL;
 			}
@@ -6474,20 +6530,9 @@ find_header:
 							 newheader, link);
 				}
 				INSIST(rbtdb->heaps != NULL);
-				result = isc_heap_insert(rbtdb->heaps[idx],
-							 newheader);
-				if (result != ISC_R_SUCCESS) {
-					free_rdataset(rbtdb, rbtdb->common.mctx,
-						      newheader);
-					return (result);
-				}
+				isc_heap_insert(rbtdb->heaps[idx], newheader);
 			} else if (RESIGN(newheader)) {
-				result = resign_insert(rbtdb, idx, newheader);
-				if (result != ISC_R_SUCCESS) {
-					free_rdataset(rbtdb, rbtdb->common.mctx,
-						      newheader);
-					return (result);
-				}
+				resign_insert(rbtdb, idx, newheader);
 				/*
 				 * Don't call resign_delete as we don't need
 				 * to reverse the delete.  The free_rdataset
@@ -6517,13 +6562,7 @@ find_header:
 			idx = newheader->node->locknum;
 			if (IS_CACHE(rbtdb)) {
 				INSIST(rbtdb->heaps != NULL);
-				result = isc_heap_insert(rbtdb->heaps[idx],
-							 newheader);
-				if (result != ISC_R_SUCCESS) {
-					free_rdataset(rbtdb, rbtdb->common.mctx,
-						      newheader);
-					return (result);
-				}
+				isc_heap_insert(rbtdb->heaps[idx], newheader);
 				if (ZEROTTL(newheader)) {
 					ISC_LIST_APPEND(rbtdb->rdatasets[idx],
 							newheader, link);
@@ -6532,12 +6571,7 @@ find_header:
 							 newheader, link);
 				}
 			} else if (RESIGN(newheader)) {
-				result = resign_insert(rbtdb, idx, newheader);
-				if (result != ISC_R_SUCCESS) {
-					free_rdataset(rbtdb, rbtdb->common.mctx,
-						      newheader);
-					return (result);
-				}
+				resign_insert(rbtdb, idx, newheader);
 				resign_delete(rbtdb, rbtversion, header);
 			}
 			if (topheader_prev != NULL) {
@@ -6582,12 +6616,7 @@ find_header:
 
 		idx = newheader->node->locknum;
 		if (IS_CACHE(rbtdb)) {
-			result = isc_heap_insert(rbtdb->heaps[idx], newheader);
-			if (result != ISC_R_SUCCESS) {
-				free_rdataset(rbtdb, rbtdb->common.mctx,
-					      newheader);
-				return (result);
-			}
+			isc_heap_insert(rbtdb->heaps[idx], newheader);
 			if (ZEROTTL(newheader)) {
 				ISC_LIST_APPEND(rbtdb->rdatasets[idx],
 						newheader, link);
@@ -6596,12 +6625,7 @@ find_header:
 						 newheader, link);
 			}
 		} else if (RESIGN(newheader)) {
-			result = resign_insert(rbtdb, idx, newheader);
-			if (result != ISC_R_SUCCESS) {
-				free_rdataset(rbtdb, rbtdb->common.mctx,
-					      newheader);
-				return (result);
-			}
+			resign_insert(rbtdb, idx, newheader);
 			resign_delete(rbtdb, rbtversion, header);
 		}
 
@@ -6648,7 +6672,8 @@ find_header:
 	 * Check if the node now contains CNAME and other data.
 	 */
 	if (rbtversion != NULL &&
-	    cname_and_other_data(rbtnode, rbtversion->serial)) {
+	    cname_and_other_data(rbtnode, rbtversion->serial))
+	{
 		return (DNS_R_CNAMEANDOTHER);
 	}
 
@@ -6660,7 +6685,7 @@ find_header:
 	return (ISC_R_SUCCESS);
 }
 
-static inline bool
+static bool
 delegating_type(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 		rbtdb_rdatatype_t type) {
 	if (IS_CACHE(rbtdb)) {
@@ -6678,7 +6703,7 @@ delegating_type(dns_rbtdb_t *rbtdb, dns_rbtnode_t *node,
 	return (false);
 }
 
-static inline isc_result_t
+static isc_result_t
 addnoqname(dns_rbtdb_t *rbtdb, rdatasetheader_t *newheader,
 	   dns_rdataset_t *rdataset) {
 	struct noqname *noqname;
@@ -6723,7 +6748,7 @@ cleanup:
 	return (result);
 }
 
-static inline isc_result_t
+static isc_result_t
 addclosest(dns_rbtdb_t *rbtdb, rdatasetheader_t *newheader,
 	   dns_rdataset_t *rdataset) {
 	struct noqname *closest;
@@ -6796,7 +6821,8 @@ addrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 		 * SOA records are only allowed at top of zone.
 		 */
 		if (rdataset->type == dns_rdatatype_soa &&
-		    node != rbtdb->origin_node) {
+		    node != rbtdb->origin_node)
+		{
 			return (DNS_R_NOTZONETOP);
 		}
 		RWLOCK(&rbtdb->tree_lock, isc_rwlocktype_read);
@@ -6952,8 +6978,9 @@ addrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 		}
 
 		header = isc_heap_element(rbtdb->heaps[rbtnode->locknum], 1);
-		if (header != NULL && header->rdh_ttl + rbtdb->serve_stale_ttl <
-					      now - RBTDB_VIRTUAL)
+		if (header != NULL &&
+		    header->rdh_ttl + STALE_TTL(header, rbtdb) <
+			    now - RBTDB_VIRTUAL)
 		{
 			expire_header(rbtdb, header, tree_locked, expire_ttl);
 		}
@@ -7084,7 +7111,8 @@ subtractrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 
 	topheader_prev = NULL;
 	for (topheader = rbtnode->data; topheader != NULL;
-	     topheader = topheader->next) {
+	     topheader = topheader->next)
+	{
 		if (topheader->type == newheader->type) {
 			break;
 		}
@@ -7128,13 +7156,8 @@ subtractrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 						  RDATASET_ATTR_RESIGN);
 				newheader->resign = header->resign;
 				newheader->resign_lsb = header->resign_lsb;
-				result = resign_insert(rbtdb, rbtnode->locknum,
-						       newheader);
-				if (result != ISC_R_SUCCESS) {
-					free_rdataset(rbtdb, rbtdb->common.mctx,
-						      newheader);
-					goto unlock;
-				}
+				resign_insert(rbtdb, rbtnode->locknum,
+					      newheader);
 			}
 			/*
 			 * We have to set the serial since the rdataslab
@@ -7407,7 +7430,7 @@ loading_addrdataset(void *arg, const dns_name_t *name,
 	if (rdataset->type != dns_rdatatype_nsec3 &&
 	    rdataset->covers != dns_rdatatype_nsec3)
 	{
-		add_empty_wildcards(rbtdb, name);
+		add_empty_wildcards(rbtdb, name, false);
 	}
 
 	if (dns_name_iswildcard(name)) {
@@ -7423,7 +7446,7 @@ loading_addrdataset(void *arg, const dns_name_t *name,
 		if (rdataset->type == dns_rdatatype_nsec3) {
 			return (DNS_R_INVALIDNSEC3);
 		}
-		result = add_wildcard_magic(rbtdb, name);
+		result = add_wildcard_magic(rbtdb, name, false);
 		if (result != ISC_R_SUCCESS) {
 			return (result);
 		}
@@ -7489,7 +7512,8 @@ loading_addrdataset(void *arg, const dns_name_t *name,
 		    isc_rwlocktype_write);
 
 	if (result == ISC_R_SUCCESS &&
-	    delegating_type(rbtdb, node, rdataset->type)) {
+	    delegating_type(rbtdb, node, rdataset->type))
+	{
 		node->find_callback = 1;
 	} else if (result == DNS_R_UNCHANGED) {
 		result = ISC_R_SUCCESS;
@@ -7655,8 +7679,7 @@ nodecount(dns_db_t *db, dns_dbtree_t tree) {
 		count = dns_rbt_nodecount(rbtdb->nsec3);
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	RWUNLOCK(&rbtdb->tree_lock, isc_rwlocktype_read);
 
@@ -7802,7 +7825,6 @@ getsize(dns_db_t *db, dns_dbversion_t *version, uint64_t *records,
 static isc_result_t
 setsigningtime(dns_db_t *db, dns_rdataset_t *rdataset, isc_stdtime_t resign) {
 	dns_rbtdb_t *rbtdb = (dns_rbtdb_t *)db;
-	isc_result_t result = ISC_R_SUCCESS;
 	rdatasetheader_t *header, oldheader;
 
 	REQUIRE(VALID_RBTDB(rbtdb));
@@ -7841,11 +7863,11 @@ setsigningtime(dns_db_t *db, dns_rdataset_t *rdataset, isc_stdtime_t resign) {
 		}
 	} else if (resign != 0) {
 		RDATASET_ATTR_SET(header, RDATASET_ATTR_RESIGN);
-		result = resign_insert(rbtdb, header->node->locknum, header);
+		resign_insert(rbtdb, header->node->locknum, header);
 	}
 	NODE_UNLOCK(&rbtdb->node_locks[header->node->locknum].lock,
 		    isc_rwlocktype_write);
-	return (result);
+	return (ISC_R_SUCCESS);
 }
 
 static isc_result_t
@@ -8253,11 +8275,7 @@ dns_rbtdb_create(isc_mem_t *mctx, const dns_name_t *origin, dns_dbtype_t type,
 	}
 	sooner = IS_CACHE(rbtdb) ? ttl_sooner : resign_sooner;
 	for (i = 0; i < (int)rbtdb->node_lock_count; i++) {
-		result = isc_heap_create(hmctx, sooner, set_index, 0,
-					 &rbtdb->heaps[i]);
-		if (result != ISC_R_SUCCESS) {
-			goto cleanup_heaps;
-		}
+		isc_heap_create(hmctx, sooner, set_index, 0, &rbtdb->heaps[i]);
 	}
 
 	/*
@@ -8411,26 +8429,6 @@ dns_rbtdb_create(isc_mem_t *mctx, const dns_name_t *origin, dns_dbtype_t type,
 	*dbp = (dns_db_t *)rbtdb;
 
 	return (ISC_R_SUCCESS);
-
-cleanup_heaps:
-	if (rbtdb->heaps != NULL) {
-		for (i = 0; i < (int)rbtdb->node_lock_count; i++) {
-			if (rbtdb->heaps[i] != NULL) {
-				isc_heap_destroy(&rbtdb->heaps[i]);
-			}
-		}
-		isc_mem_put(hmctx, rbtdb->heaps,
-			    rbtdb->node_lock_count * sizeof(isc_heap_t *));
-	}
-
-	if (rbtdb->rdatasets != NULL) {
-		isc_mem_put(mctx, rbtdb->rdatasets,
-			    rbtdb->node_lock_count *
-				    sizeof(rdatasetheaderlist_t));
-	}
-	if (rbtdb->rrsetstats != NULL) {
-		dns_stats_detach(&rbtdb->rrsetstats);
-	}
 
 cleanup_node_locks:
 	isc_mem_put(mctx, rbtdb->node_locks,
@@ -8740,6 +8738,35 @@ rdatasetiter_destroy(dns_rdatasetiter_t **iteratorp) {
 	*iteratorp = NULL;
 }
 
+static bool
+iterator_active(dns_rbtdb_t *rbtdb, rbtdb_rdatasetiter_t *rbtiterator,
+		rdatasetheader_t *header) {
+	dns_ttl_t stale_ttl = header->rdh_ttl + STALE_TTL(header, rbtdb);
+
+	/*
+	 * Is this a "this rdataset doesn't exist" record?
+	 */
+	if (NONEXISTENT(header)) {
+		return (false);
+	}
+
+	/*
+	 * If this is a zone or this header still active then return it.
+	 */
+	if (!IS_CACHE(rbtdb) || ACTIVE(header, rbtiterator->common.now)) {
+		return (true);
+	}
+
+	/*
+	 * If we are not returning stale records or the rdataset is
+	 * too old don't return it.
+	 */
+	if (!STALEOK(rbtiterator) || (rbtiterator->common.now > stale_ttl)) {
+		return (false);
+	}
+	return (true);
+}
+
 static isc_result_t
 rdatasetiter_first(dns_rdatasetiter_t *iterator) {
 	rbtdb_rdatasetiter_t *rbtiterator = (rbtdb_rdatasetiter_t *)iterator;
@@ -8747,16 +8774,7 @@ rdatasetiter_first(dns_rdatasetiter_t *iterator) {
 	dns_rbtnode_t *rbtnode = rbtiterator->common.node;
 	rbtdb_version_t *rbtversion = rbtiterator->common.version;
 	rdatasetheader_t *header, *top_next;
-	rbtdb_serial_t serial;
-	isc_stdtime_t now;
-
-	if (IS_CACHE(rbtdb)) {
-		serial = 1;
-		now = rbtiterator->common.now;
-	} else {
-		serial = rbtversion->serial;
-		now = 0;
-	}
+	rbtdb_serial_t serial = IS_CACHE(rbtdb) ? 1 : rbtversion->serial;
 
 	NODE_LOCK(&rbtdb->node_locks[rbtnode->locknum].lock,
 		  isc_rwlocktype_read);
@@ -8764,21 +8782,15 @@ rdatasetiter_first(dns_rdatasetiter_t *iterator) {
 	for (header = rbtnode->data; header != NULL; header = top_next) {
 		top_next = header->next;
 		do {
-			if (header->serial <= serial && !IGNORE(header)) {
-				/*
-				 * Is this a "this rdataset doesn't exist"
-				 * record?  Or is it too old in the cache?
-				 *
-				 * Note: unlike everywhere else, we
-				 * check for now > header->rdh_ttl instead
-				 * of ">=".  This allows ANY and RRSIG
-				 *  queries for 0 TTL rdatasets to work.
-				 */
-				if (NONEXISTENT(header) ||
-				    (now != 0 &&
-				     (now - RBTDB_VIRTUAL) >
-					     header->rdh_ttl +
-						     rbtdb->serve_stale_ttl))
+			if (EXPIREDOK(rbtiterator)) {
+				if (!NONEXISTENT(header)) {
+					break;
+				}
+				header = header->down;
+			} else if (header->serial <= serial && !IGNORE(header))
+			{
+				if (!iterator_active(rbtdb, rbtiterator,
+						     header))
 				{
 					header = NULL;
 				}
@@ -8811,22 +8823,14 @@ rdatasetiter_next(dns_rdatasetiter_t *iterator) {
 	dns_rbtnode_t *rbtnode = rbtiterator->common.node;
 	rbtdb_version_t *rbtversion = rbtiterator->common.version;
 	rdatasetheader_t *header, *top_next;
-	rbtdb_serial_t serial;
-	isc_stdtime_t now;
+	rbtdb_serial_t serial = IS_CACHE(rbtdb) ? 1 : rbtversion->serial;
 	rbtdb_rdatatype_t type, negtype;
 	dns_rdatatype_t rdtype, covers;
+	bool expiredok = EXPIREDOK(rbtiterator);
 
 	header = rbtiterator->current;
 	if (header == NULL) {
 		return (ISC_R_NOMORE);
-	}
-
-	if (IS_CACHE(rbtdb)) {
-		serial = 1;
-		now = rbtiterator->common.now;
-	} else {
-		serial = rbtversion->serial;
-		now = 0;
 	}
 
 	NODE_LOCK(&rbtdb->node_locks[rbtnode->locknum].lock,
@@ -8840,39 +8844,57 @@ rdatasetiter_next(dns_rdatasetiter_t *iterator) {
 	} else {
 		negtype = RBTDB_RDATATYPE_VALUE(0, rdtype);
 	}
-	for (header = header->next; header != NULL; header = top_next) {
-		top_next = header->next;
+
+	/*
+	 * Find the start of the header chain for the next type
+	 * by walking back up the list.
+	 */
+	top_next = header->next;
+	while (top_next != NULL &&
+	       (top_next->type == type || top_next->type == negtype))
+	{
+		top_next = top_next->next;
+	}
+	if (expiredok) {
 		/*
-		 * If not walking back up the down list.
+		 * Keep walking down the list if possible or
+		 * start the next type.
 		 */
-		if (header->type != type && header->type != negtype) {
-			do {
-				if (header->serial <= serial && !IGNORE(header))
-				{
-					/*
-					 * Is this a "this rdataset doesn't
-					 * exist" record?
-					 *
-					 * Note: unlike everywhere else, we
-					 * check for now > header->ttl instead
-					 * of ">=".  This allows ANY and RRSIG
-					 * queries for 0 TTL rdatasets to work.
-					 */
-					if (NONEXISTENT(header) ||
-					    (now != 0 &&
-					     (now - RBTDB_VIRTUAL) >
-						     header->rdh_ttl))
-					{
-						header = NULL;
-					}
+		header = header->down != NULL ? header->down : top_next;
+	} else {
+		header = top_next;
+	}
+	for (; header != NULL; header = top_next) {
+		top_next = header->next;
+		do {
+			if (expiredok) {
+				if (!NONEXISTENT(header)) {
 					break;
-				} else {
-					header = header->down;
 				}
-			} while (header != NULL);
-			if (header != NULL) {
+				header = header->down;
+			} else if (header->serial <= serial && !IGNORE(header))
+			{
+				if (!iterator_active(rbtdb, rbtiterator,
+						     header))
+				{
+					header = NULL;
+				}
 				break;
+			} else {
+				header = header->down;
 			}
+		} while (header != NULL);
+		if (header != NULL) {
+			break;
+		}
+		/*
+		 * Find the start of the header chain for the next type
+		 * by walking back up the list.
+		 */
+		while (top_next != NULL &&
+		       (top_next->type == type || top_next->type == negtype))
+		{
+			top_next = top_next->next;
 		}
 	}
 
@@ -8912,7 +8934,7 @@ rdatasetiter_current(dns_rdatasetiter_t *iterator, dns_rdataset_t *rdataset) {
  * Database Iterator Methods
  */
 
-static inline void
+static void
 reference_iter_node(rbtdb_dbiterator_t *rbtdbiter) {
 	dns_rbtdb_t *rbtdb = (dns_rbtdb_t *)rbtdbiter->common.db;
 	dns_rbtnode_t *node = rbtdbiter->node;
@@ -8925,7 +8947,7 @@ reference_iter_node(rbtdb_dbiterator_t *rbtdbiter) {
 	reactivate_node(rbtdb, node, rbtdbiter->tree_locked);
 }
 
-static inline void
+static void
 dereference_iter_node(rbtdb_dbiterator_t *rbtdbiter) {
 	dns_rbtdb_t *rbtdb = (dns_rbtdb_t *)rbtdbiter->common.db;
 	dns_rbtnode_t *node = rbtdbiter->node;
@@ -8994,7 +9016,7 @@ flush_deletions(rbtdb_dbiterator_t *rbtdbiter) {
 	}
 }
 
-static inline void
+static void
 resume_iteration(rbtdb_dbiterator_t *rbtdbiter) {
 	dns_rbtdb_t *rbtdb = (dns_rbtdb_t *)rbtdbiter->common.db;
 
@@ -9600,7 +9622,8 @@ rehash_bits(rbtdb_version_t *version, size_t newcount) {
 	uint32_t newbits = oldbits;
 
 	while (newcount >= HASHSIZE(newbits) &&
-	       newbits <= RBTDB_GLUE_TABLE_MAX_BITS) {
+	       newbits <= RBTDB_GLUE_TABLE_MAX_BITS)
+	{
 		newbits += 1;
 	}
 
@@ -9631,7 +9654,8 @@ rehash_gluetable(rbtdb_version_t *version) {
 		rbtdb_glue_table_node_t *gluenode;
 		rbtdb_glue_table_node_t *nextgluenode;
 		for (gluenode = oldtable[i]; gluenode != NULL;
-		     gluenode = nextgluenode) {
+		     gluenode = nextgluenode)
+		{
 			uint32_t hash = isc_hash32(
 				&gluenode->node, sizeof(gluenode->node), true);
 			uint32_t idx = hash_32(hash, newbits);
@@ -10044,7 +10068,7 @@ no_glue:
  *
  * Caller must hold the node (read or write) lock.
  */
-static inline bool
+static bool
 need_headerupdate(rdatasetheader_t *header, isc_stdtime_t now) {
 	if (RDATASET_ATTR_GET(header, (RDATASET_ATTR_NONEXISTENT |
 				       RDATASET_ATTR_ANCIENT |

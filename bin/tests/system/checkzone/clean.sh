@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # Copyright (C) Internet Systems Consortium, Inc. ("ISC")
 #
 # SPDX-License-Identifier: MPL-2.0
@@ -11,4 +13,5 @@
 
 rm -f test.* good1.db.raw named-compilezone
 rm -f ns*/named.lock
+rm -f zones/bad-tsig.db
 rm -f zones/zone1_*.txt

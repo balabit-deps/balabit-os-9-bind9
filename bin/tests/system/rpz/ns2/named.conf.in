@@ -28,7 +28,7 @@ options {
 
 key rndc_key {
 	secret "1234abcd8765";
-	algorithm hmac-sha256;
+	algorithm @DEFAULT_HMAC@;
 };
 controls {
 	inet 10.53.0.2 port @CONTROLPORT@ allow { any; } keys { rndc_key; };
@@ -49,3 +49,7 @@ zone "tld2s."		    {type primary; file "tld2s.db";};
 
 zone "bl.tld2."		    {type primary; file "bl.tld2.db";
 				notify yes; notify-delay 0;};
+
+# grafted on zones using stub and static-stub
+zone "stub."		    {type primary; file "stub.db"; };
+zone "static-stub."	    {type primary; file "stub.db"; };

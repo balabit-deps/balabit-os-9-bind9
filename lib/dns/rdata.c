@@ -259,17 +259,17 @@ static isc_result_t
 unknown_totext(dns_rdata_t *rdata, dns_rdata_textctx_t *tctx,
 	       isc_buffer_t *target);
 
-static inline isc_result_t generic_fromtext_key(ARGS_FROMTEXT);
+static isc_result_t generic_fromtext_key(ARGS_FROMTEXT);
 
-static inline isc_result_t generic_totext_key(ARGS_TOTEXT);
+static isc_result_t generic_totext_key(ARGS_TOTEXT);
 
-static inline isc_result_t generic_fromwire_key(ARGS_FROMWIRE);
+static isc_result_t generic_fromwire_key(ARGS_FROMWIRE);
 
-static inline isc_result_t generic_fromstruct_key(ARGS_FROMSTRUCT);
+static isc_result_t generic_fromstruct_key(ARGS_FROMSTRUCT);
 
-static inline isc_result_t generic_tostruct_key(ARGS_TOSTRUCT);
+static isc_result_t generic_tostruct_key(ARGS_TOSTRUCT);
 
-static inline void generic_freestruct_key(ARGS_FREESTRUCT);
+static void generic_freestruct_key(ARGS_FREESTRUCT);
 
 static isc_result_t generic_fromtext_txt(ARGS_FROMTEXT);
 
@@ -351,7 +351,7 @@ static dns_name_t const gc_msdcs = DNS_NAME_INITNONABSOLUTE(gc_msdcs_data,
  * \note
  *	(1) does not touch `dst' unless it's returning 1.
  */
-static inline int
+static int
 locator_pton(const char *src, unsigned char *dst) {
 	static const char xdigits_l[] = "0123456789abcdef",
 			  xdigits_u[] = "0123456789ABCDEF";
@@ -409,7 +409,7 @@ locator_pton(const char *src, unsigned char *dst) {
 	return (1);
 }
 
-static inline void
+static void
 name_duporclone(const dns_name_t *source, isc_mem_t *mctx, dns_name_t *target) {
 	if (mctx != NULL) {
 		dns_name_dup(source, mctx, target);
@@ -418,7 +418,7 @@ name_duporclone(const dns_name_t *source, isc_mem_t *mctx, dns_name_t *target) {
 	}
 }
 
-static inline void *
+static void *
 mem_maybedup(isc_mem_t *mctx, void *source, size_t length) {
 	void *copy;
 
@@ -431,7 +431,7 @@ mem_maybedup(isc_mem_t *mctx, void *source, size_t length) {
 	return (copy);
 }
 
-static inline isc_result_t
+static isc_result_t
 typemap_fromtext(isc_lex_t *lexer, isc_buffer_t *target, bool allow_empty) {
 	isc_token_t token;
 	unsigned char bm[8 * 1024]; /* 64k bits */
@@ -499,7 +499,7 @@ typemap_fromtext(isc_lex_t *lexer, isc_buffer_t *target, bool allow_empty) {
 	return (ISC_R_SUCCESS);
 }
 
-static inline isc_result_t
+static isc_result_t
 typemap_totext(isc_region_t *sr, dns_rdata_textctx_t *tctx,
 	       isc_buffer_t *target) {
 	unsigned int i, j, k;
@@ -508,7 +508,8 @@ typemap_totext(isc_region_t *sr, dns_rdata_textctx_t *tctx,
 
 	for (i = 0; i < sr->length; i += len) {
 		if (tctx != NULL &&
-		    (tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0) {
+		    (tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
+		{
 			RETERR(str_totext(tctx->linebreak, target));
 			first = true;
 		}
@@ -987,7 +988,8 @@ dns_rdata_fromtext(dns_rdata_t *rdata, dns_rdataclass_t rdclass,
 
 	unknown = false;
 	if (token.type == isc_tokentype_string &&
-	    strcmp(DNS_AS_STR(token), "\\#") == 0) {
+	    strcmp(DNS_AS_STR(token), "\\#") == 0)
+	{
 		/*
 		 * If this is a TXT record '\#' could be a escaped '#'.
 		 * Look to see if the next token is a number and if so
@@ -1035,7 +1037,8 @@ dns_rdata_fromtext(dns_rdata_t *rdata, dns_rdataclass_t rdclass,
 			}
 			break;
 		} else if (token.type != isc_tokentype_eol &&
-			   token.type != isc_tokentype_eof) {
+			   token.type != isc_tokentype_eof)
+		{
 			if (result == ISC_R_SUCCESS) {
 				result = DNS_R_EXTRATOKEN;
 			}
@@ -1111,7 +1114,8 @@ unknown_totext(dns_rdata_t *rdata, dns_rdata_textctx_t *tctx,
 						tctx->linebreak, target);
 		}
 		if (result == ISC_R_SUCCESS &&
-		    (tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0) {
+		    (tctx->flags & DNS_STYLEFLAG_MULTILINE) != 0)
+		{
 			result = str_totext(" )", target);
 		}
 	}
@@ -1892,9 +1896,9 @@ inet_totext(int af, uint32_t flags, isc_region_t *src, isc_buffer_t *target) {
 	 * parsing, so append 0 in that case.
 	 */
 	if (af == AF_INET6 && (flags & DNS_STYLEFLAG_YAML) != 0) {
-		isc_textregion_t tr;
-		isc_buffer_usedregion(target, (isc_region_t *)&tr);
-		if (tr.base[tr.length - 1] == ':') {
+		isc_region_t r;
+		isc_buffer_usedregion(target, &r);
+		if (r.length > 0 && r.base[r.length - 1] == ':') {
 			if (isc_buffer_availablelength(target) == 0) {
 				return (ISC_R_NOSPACE);
 			}
@@ -2195,7 +2199,8 @@ dns_rdatatype_issingleton(dns_rdatatype_t type) {
 bool
 dns_rdatatype_notquestion(dns_rdatatype_t type) {
 	if ((dns_rdatatype_attributes(type) & DNS_RDATATYPEATTR_NOTQUESTION) !=
-	    0) {
+	    0)
+	{
 		return (true);
 	}
 	return (false);
@@ -2204,7 +2209,8 @@ dns_rdatatype_notquestion(dns_rdatatype_t type) {
 bool
 dns_rdatatype_questiononly(dns_rdatatype_t type) {
 	if ((dns_rdatatype_attributes(type) & DNS_RDATATYPEATTR_QUESTIONONLY) !=
-	    0) {
+	    0)
+	{
 		return (true);
 	}
 	return (false);
@@ -2230,7 +2236,8 @@ dns_rdatatype_atparent(dns_rdatatype_t type) {
 bool
 dns_rdatatype_followadditional(dns_rdatatype_t type) {
 	if ((dns_rdatatype_attributes(type) &
-	     DNS_RDATATYPEATTR_FOLLOWADDITIONAL) != 0) {
+	     DNS_RDATATYPEATTR_FOLLOWADDITIONAL) != 0)
+	{
 		return (true);
 	}
 	return (false);
@@ -2258,7 +2265,8 @@ dns_rdatatype_isdnssec(dns_rdatatype_t type) {
 bool
 dns_rdatatype_iszonecutauth(dns_rdatatype_t type) {
 	if ((dns_rdatatype_attributes(type) & DNS_RDATATYPEATTR_ZONECUTAUTH) !=
-	    0) {
+	    0)
+	{
 		return (true);
 	}
 	return (false);

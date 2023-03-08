@@ -96,14 +96,15 @@ target_triplet = @target@
 
 subdir = doc/arm
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_cc_for_build.m4 \
-	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
+	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_check_openssl.m4 \
 	$(top_srcdir)/m4/ax_gcc_func_attribute.m4 \
 	$(top_srcdir)/m4/ax_jemalloc.m4 \
 	$(top_srcdir)/m4/ax_lib_lmdb.m4 \
 	$(top_srcdir)/m4/ax_perl_module.m4 \
 	$(top_srcdir)/m4/ax_posix_shell.m4 \
+	$(top_srcdir)/m4/ax_prog_cc_for_build.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
 	$(top_srcdir)/m4/ax_python_module.m4 \
 	$(top_srcdir)/m4/ax_restore_flags.m4 \
@@ -151,14 +152,19 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BUILD_EXEEXT = @BUILD_EXEEXT@
+BUILD_OBJEXT = @BUILD_OBJEXT@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
 CFLAGS = @CFLAGS@
+CFLAGS_FOR_BUILD = @CFLAGS_FOR_BUILD@
 CMOCKA_CFLAGS = @CMOCKA_CFLAGS@
 CMOCKA_LIBS = @CMOCKA_LIBS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CPPFLAGS_FOR_BUILD = @CPPFLAGS_FOR_BUILD@
+CPP_FOR_BUILD = @CPP_FOR_BUILD@
 CURL = @CURL@
 CYGPATH_W = @CYGPATH_W@
 DEFS = @DEFS@
@@ -175,7 +181,6 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
-EXEEXT_FOR_BUILD = @EXEEXT_FOR_BUILD@
 FGREP = @FGREP@
 FSTRM_CAPTURE = @FSTRM_CAPTURE@
 FUZZ_LDFLAGS = @FUZZ_LDFLAGS@
@@ -198,6 +203,7 @@ KRB5_LIBS = @KRB5_LIBS@
 LATEXMK = @LATEXMK@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LDFLAGS_FOR_BUILD = @LDFLAGS_FOR_BUILD@
 LIBCAP_LIBS = @LIBCAP_LIBS@
 LIBIDN2_CFLAGS = @LIBIDN2_CFLAGS@
 LIBIDN2_LIBS = @LIBIDN2_LIBS@
@@ -266,7 +272,9 @@ SHELL = @SHELL@
 SPHINX_BUILD = @SPHINX_BUILD@
 STD_CFLAGS = @STD_CFLAGS@
 STD_CPPFLAGS = @STD_CPPFLAGS@
+STD_LDFLAGS = @STD_LDFLAGS@
 STRIP = @STRIP@
+TEST_CFLAGS = @TEST_CFLAGS@
 VERSION = @VERSION@
 XELATEX = @XELATEX@
 XSLTPROC = @XSLTPROC@
@@ -278,6 +286,7 @@ abs_top_builddir = @abs_top_builddir@
 abs_top_srcdir = @abs_top_srcdir@
 ac_ct_AR = @ac_ct_AR@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CC_FOR_BUILD = @ac_ct_CC_FOR_BUILD@
 ac_ct_DUMPBIN = @ac_ct_DUMPBIN@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
@@ -343,7 +352,7 @@ AM_CPPFLAGS = \
 	-include $(top_builddir)/config.h	\
 	-I$(srcdir)/include
 
-AM_LDFLAGS = $(am__append_1)
+AM_LDFLAGS = $(STD_LDFLAGS) $(am__append_1)
 LDADD = 
 LIBISC_CFLAGS = \
 	-I$(top_srcdir)/include				\
@@ -392,6 +401,7 @@ SPHINX_V = $(SPHINX_V_@AM_V@)
 SPHINX_V_ = $(SPHINX_V_@AM_DEFAULT_V@)
 SPHINX_V_0 = -q
 SPHINX_V_1 = -n
+SPHINX_W = -W
 AM_V_SPHINX = $(AM_V_SPHINX_@AM_V@)
 AM_V_SPHINX_ = $(AM_V_SPHINX_@AM_DEFAULT_V@)
 AM_V_SPHINX_0 = @echo "  SPHINX   $@";
@@ -404,7 +414,7 @@ BIND_KEYS = .. |bind_keys| replace:: ``$(sysconfdir)/bind.keys``
 NAMED_PID = .. |named_pid| replace:: ``$(runstatedir)/named.pid``
 SESSION_KEY = .. |session_key| replace:: ``$(runstatedir)/session.key``
 common_SPHINXOPTS = \
-	-W				\
+	$(SPHINX_W)			\
 	-c $(srcdir)			\
 	-a				\
 	$(SPHINX_V)
@@ -441,63 +451,84 @@ AM_V_SED_0 = @echo "  SED $@";
 AM_V_CFG_TEST = $(AM_V_CFG_TEST_@AM_V@)
 AM_V_CFG_TEST_ = $(AM_V_CFG_TEST_@AM_DEFAULT_V@)
 AM_V_CFG_TEST_0 = @echo "  CFG_GEN $@";
-AM_V_RST_OPTIONS = $(AM_V_CFG_TEST_@AM_V@)
-AM_V_RST_OPTIONS_ = $(AM_V_RST_OPTIONS_@AM_DEFAULT_V@)
-AM_V_RST_OPTIONS_0 = @echo "  RST_OPTIONS $@";
-AM_V_RST_ZONEOPT = $(AM_V_CFG_TEST_@AM_V@)
-AM_V_RST_ZONEOPT_ = $(AM_V_RST_ZONEOPT_@AM_DEFAULT_V@)
-AM_V_RST_ZONEOPT_0 = @echo "  RST_ZONEOPT $@";
-AM_V_RST_GRAMMARS = $(AM_V_CFG_TEST_@AM_V@)
-AM_V_RST_GRAMMARS_ = $(AM_V_RST_GRAMMARS_@AM_DEFAULT_V@)
-AM_V_RST_GRAMMARS_0 = @echo "  RST_GRAMMARS $@";
 EXTRA_DIST = \
+	advanced.inc.rst			\
+	build.inc.rst				\
+	catz.inc.rst				\
+	chapter10.rst				\
+	chapter1.rst				\
+	chapter2.rst				\
+	chapter3.rst				\
+	chapter4.rst				\
+	chapter5.rst				\
+	chapter6.rst				\
+	chapter7.rst				\
+	chapter9.rst				\
+	config-auth.inc.rst			\
+	config-intro.inc.rst			\
+	config-resolve.inc.rst			\
 	conf.py					\
-	isc-logo.pdf				\
-	advanced.rst				\
-	build.rst				\
-	catz.rst				\
-	configuration.rst			\
-	dlz.rst					\
+	dlz.inc.rst				\
+	dns-ops.inc.rst				\
 	dnssec-guide.rst			\
-	dnssec.rst				\
-	dyndb.rst				\
+	dnssec.inc.rst				\
+	dns-security-overview.dia		\
+	dns-security-overview.png		\
+	dns-servers.dia				\
+	dns-servers.png				\
+	dns-tree.dia				\
+	dns-tree.png				\
+	dyndb.inc.rst				\
 	general.rst				\
 	history.rst				\
 	index.rst				\
-	introduction.rst			\
-	logging-categories.rst			\
-	managed-keys.rst			\
+	intro-dns-bind.inc.rst			\
+	introduction.inc.rst			\
+	intro-security.inc.rst			\
+	isc-logo.pdf				\
+	logging-categories.inc.rst		\
+	managed-keys.inc.rst			\
 	manpages.rst				\
+	name-resolution.dia			\
+	name-resolution.png			\
 	notes.rst				\
-	pkcs11.rst				\
-	platforms.rst				\
-	plugins.rst				\
+	pkcs11.inc.rst				\
+	platforms.inc.rst			\
+	plugins.inc.rst				\
+	primary-secondary.dia			\
+	primary-secondary.png			\
+	recursive-query.dia			\
+	recursive-query.png			\
 	reference.rst				\
-	requirements.rst			\
-	security.rst				\
-	troubleshooting.rst			\
+	requirements.inc.rst			\
+	requirements.txt			\
+	resolver-forward.dia			\
+	resolver-forward.png			\
+	rpz.inc.rst				\
+	security.inc.rst			\
+	sig0.inc.rst				\
+	tkey.inc.rst				\
+	troubleshooting.inc.rst			\
+	tsig.inc.rst				\
+	zones.inc.rst				\
+	_ext/iscconf.py				\
+	_ext/mergegrammar.py			\
+	_ext/namedconf.py			\
+	_ext/rndcconf.py			\
+	_static/custom.css			\
 	../dnssec-guide				\
-	../misc/acl.grammar.rst			\
-	../misc/controls.grammar.rst		\
-	../misc/delegation-only.zoneopt.rst	\
-	../misc/forward.zoneopt.rst		\
-	../misc/hint.zoneopt.rst		\
-	../misc/in-view.zoneopt.rst		\
-	../misc/key.grammar.rst			\
-	../misc/logging.grammar.rst		\
-	../misc/managed-keys.grammar.rst	\
-	../misc/primary.zoneopt.rst		\
-	../misc/mirror.zoneopt.rst		\
-	../misc/options.grammar.rst		\
-	../misc/parental-agents.grammar.rst	\
-	../misc/primaries.grammar.rst		\
-	../misc/redirect.zoneopt.rst		\
-	../misc/server.grammar.rst		\
-	../misc/secondary.zoneopt.rst		\
-	../misc/static-stub.zoneopt.rst		\
-	../misc/statistics-channels.grammar.rst	\
-	../misc/stub.zoneopt.rst		\
-	../misc/trusted-keys.grammar.rst	\
+	../misc/options				\
+	../misc/rndc.grammar			\
+	../misc/delegation-only.zoneopt		\
+	../misc/forward.zoneopt			\
+	../misc/hint.zoneopt			\
+	../misc/in-view.zoneopt			\
+	../misc/mirror.zoneopt			\
+	../misc/primary.zoneopt			\
+	../misc/redirect.zoneopt		\
+	../misc/secondary.zoneopt		\
+	../misc/static-stub.zoneopt		\
+	../misc/stub.zoneopt			\
 	../notes/*.rst
 
 all: all-am

@@ -19,13 +19,12 @@ CLEANFILES =				\
 	$(nodist_libdns_la_SOURCES)	\
 	gen$(BUILD_EXEEXT)
 
-gen$(BUILD_EXEEXT): gen.c gen.h
-	$(CC_FOR_BUILD) -g -I. $(GEN_NEED_OPTARG) $(srcdir)/gen.c -o $@
+gen$(BUILD_EXEEXT): gen.c
+	$(CC_FOR_BUILD) -g -I. $(srcdir)/gen.c -o $@
 
 EXTRA_DIST =		\
 	dnstap.proto	\
 	gen.c		\
-	gen.h		\
 	rdata/*
 
 include/dns/enumtype.h: gen Makefile
@@ -301,7 +300,7 @@ endif
 if HAVE_GEOIP2
 libdns_la_CPPFLAGS +=		\
 	$(MAXMINDDB_CFLAGS)
-libdns_la_LDFLAGS +=		\
+libdns_la_LIBADD +=		\
 	$(MAXMINDDB_LIBS)
 endif
 
@@ -323,8 +322,4 @@ endif
 if HAVE_LMDB
 libdns_la_CPPFLAGS += $(LMDB_CFLAGS)
 libdns_la_LIBADD += $(LMDB_LIBS)
-endif
-
-if HAVE_CMOCKA
-SUBDIRS = tests
 endif

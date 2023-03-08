@@ -62,8 +62,7 @@ isc_rwlock_lock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 		}
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	return (ISC_R_SUCCESS);
 }
@@ -83,7 +82,7 @@ isc_rwlock_trylock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 		}
 		break;
 	default:
-		INSIST(0);
+		UNREACHABLE();
 	}
 
 	switch (ret) {
@@ -94,8 +93,7 @@ isc_rwlock_trylock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 	case EAGAIN:
 		return (ISC_R_LOCKBUSY);
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 }
 
@@ -210,8 +208,7 @@ isc_rwlock_init(isc_rwlock_t *rwl, unsigned int read_quota,
 	rwl->readers_waiting = 0;
 	atomic_init(&rwl->write_granted, 0);
 	if (read_quota != 0) {
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "read quota is not supported");
+		UNEXPECTED_ERROR("read quota is not supported");
 	}
 	if (write_quota == 0) {
 		write_quota = RWLOCK_DEFAULT_WRITE_QUOTA;
@@ -337,7 +334,8 @@ isc__rwlock_lock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 		POST(cntflag);
 		while (1) {
 			if ((atomic_load_acquire(&rwl->cnt_and_flag) &
-			     WRITER_ACTIVE) == 0) {
+			     WRITER_ACTIVE) == 0)
+			{
 				break;
 			}
 
@@ -345,7 +343,8 @@ isc__rwlock_lock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 			LOCK(&rwl->lock);
 			rwl->readers_waiting++;
 			if ((atomic_load_acquire(&rwl->cnt_and_flag) &
-			     WRITER_ACTIVE) != 0) {
+			     WRITER_ACTIVE) != 0)
+			{
 				WAIT(&rwl->readable, &rwl->lock);
 			}
 			rwl->readers_waiting--;
@@ -389,10 +388,12 @@ isc__rwlock_lock(isc_rwlock_t *rwl, isc_rwlocktype_t type) {
 		/* enter the waiting queue, and wait for our turn */
 		prev_writer = atomic_fetch_add_release(&rwl->write_requests, 1);
 		while (atomic_load_acquire(&rwl->write_completions) !=
-		       prev_writer) {
+		       prev_writer)
+		{
 			LOCK(&rwl->lock);
 			if (atomic_load_acquire(&rwl->write_completions) !=
-			    prev_writer) {
+			    prev_writer)
+			{
 				WAIT(&rwl->writeable, &rwl->lock);
 				UNLOCK(&rwl->lock);
 				continue;

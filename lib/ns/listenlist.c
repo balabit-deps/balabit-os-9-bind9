@@ -27,13 +27,14 @@ static void
 destroy(ns_listenlist_t *list);
 
 static isc_result_t
-listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
-		 dns_acl_t *acl, const uint16_t family, const bool is_http,
-		 bool tls, const ns_listen_tls_params_t *tls_params,
+listenelt_create(isc_mem_t *mctx, in_port_t port, dns_acl_t *acl,
+		 const uint16_t family, const bool is_http, bool tls,
+		 const ns_listen_tls_params_t *tls_params,
 		 isc_tlsctx_cache_t *tlsctx_cache, ns_listenelt_t **target) {
 	ns_listenelt_t *elt = NULL;
 	isc_result_t result = ISC_R_SUCCESS;
 	isc_tlsctx_t *sslctx = NULL;
+	isc_tls_cert_store_t *store = NULL, *found_store = NULL;
 
 	REQUIRE(target != NULL && *target == NULL);
 	REQUIRE(!tls || (tls_params != NULL && tlsctx_cache != NULL));
@@ -47,7 +48,8 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 		 * order to avoid excessive TLS contexts creation.
 		 */
 		result = isc_tlsctx_cache_find(tlsctx_cache, tls_params->name,
-					       transport, family, &sslctx);
+					       transport, family, &sslctx,
+					       &found_store, NULL);
 		if (result != ISC_R_SUCCESS) {
 			/*
 			 * The lookup failed, let's try to create a new context
@@ -59,7 +61,50 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 			result = isc_tlsctx_createserver(
 				tls_params->key, tls_params->cert, &sslctx);
 			if (result != ISC_R_SUCCESS) {
-				return (result);
+				goto tls_error;
+			}
+
+			/*
+			 * We need to initialise session ID context to make TLS
+			 * session resumption work correctly - in particular in
+			 * the case when client certificates are used (Mutual
+			 * TLS) - otherwise resumption attempts will lead to
+			 * handshake failures. See OpenSSL documentation for
+			 * 'SSL_CTX_set_session_id_context()', the "Warnings"
+			 * section.
+			 */
+			isc_tlsctx_set_random_session_id_context(sslctx);
+
+			/*
+			 * If CA-bundle file is specified - enable client
+			 * certificates validation.
+			 */
+			if (tls_params->ca_file != NULL) {
+				if (found_store == NULL) {
+					result = isc_tls_cert_store_create(
+						tls_params->ca_file, &store);
+					if (result != ISC_R_SUCCESS) {
+						goto tls_error;
+					}
+				} else {
+					store = found_store;
+				}
+
+				result = isc_tlsctx_enable_peer_verification(
+					sslctx, true, store, NULL, false);
+				if (result != ISC_R_SUCCESS) {
+					goto tls_error;
+				}
+
+				/*
+				 * Load the list of allowed client certificate
+				 * issuers to send to TLS clients.
+				 */
+				result = isc_tlsctx_load_client_ca_names(
+					sslctx, tls_params->ca_file);
+				if (result != ISC_R_SUCCESS) {
+					goto tls_error;
+				}
 			}
 
 			if (tls_params->protocols != 0) {
@@ -69,9 +114,10 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 
 			if (tls_params->dhparam_file != NULL) {
 				if (!isc_tlsctx_load_dhparams(
-					    sslctx, tls_params->dhparam_file)) {
-					isc_tlsctx_free(&sslctx);
-					return (ISC_R_FAILURE);
+					    sslctx, tls_params->dhparam_file))
+				{
+					result = ISC_R_FAILURE;
+					goto tls_error;
 				}
 			}
 
@@ -105,10 +151,18 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 			 * The storing in the cache should not fail because the
 			 * (re)initialisation happens from within a single
 			 * thread.
+			 *
+			 * Taking into account that the most recent call to
+			 * 'isc_tlsctx_cache_find()' has failed, it means that
+			 * the TLS context has not been found. Considering that
+			 * the initialisation happens from within the context of
+			 * a single thread, the call to 'isc_tlsctx_cache_add()'
+			 * is expected not to fail.
 			 */
 			RUNTIME_CHECK(isc_tlsctx_cache_add(
 					      tlsctx_cache, tls_params->name,
-					      transport, family, sslctx,
+					      transport, family, sslctx, store,
+					      NULL, NULL, NULL,
 					      NULL) == ISC_R_SUCCESS);
 		} else {
 			INSIST(sslctx != NULL);
@@ -120,7 +174,6 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 	ISC_LINK_INIT(elt, link);
 	elt->port = port;
 	elt->is_http = false;
-	elt->dscp = dscp;
 	elt->acl = acl;
 	elt->sslctx = sslctx;
 	elt->sslctx_cache = NULL;
@@ -129,27 +182,37 @@ listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 	}
 	elt->http_endpoints = NULL;
 	elt->http_endpoints_number = 0;
-	elt->http_quota = NULL;
+	elt->http_max_clients = 0;
+	elt->max_concurrent_streams = 0;
 
 	*target = elt;
 	return (ISC_R_SUCCESS);
+tls_error:
+	if (sslctx != NULL) {
+		isc_tlsctx_free(&sslctx);
+	}
+
+	if (store != NULL && store != found_store) {
+		isc_tls_cert_store_free(&store);
+	}
+	return (result);
 }
 
 isc_result_t
-ns_listenelt_create(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
-		    dns_acl_t *acl, const uint16_t family, bool tls,
+ns_listenelt_create(isc_mem_t *mctx, in_port_t port, dns_acl_t *acl,
+		    const uint16_t family, bool tls,
 		    const ns_listen_tls_params_t *tls_params,
 		    isc_tlsctx_cache_t *tlsctx_cache, ns_listenelt_t **target) {
-	return listenelt_create(mctx, port, dscp, acl, family, false, tls,
-				tls_params, tlsctx_cache, target);
+	return listenelt_create(mctx, port, acl, family, false, tls, tls_params,
+				tlsctx_cache, target);
 }
 
 isc_result_t
-ns_listenelt_create_http(isc_mem_t *mctx, in_port_t http_port, isc_dscp_t dscp,
-			 dns_acl_t *acl, const uint16_t family, bool tls,
+ns_listenelt_create_http(isc_mem_t *mctx, in_port_t http_port, dns_acl_t *acl,
+			 const uint16_t family, bool tls,
 			 const ns_listen_tls_params_t *tls_params,
 			 isc_tlsctx_cache_t *tlsctx_cache, char **endpoints,
-			 size_t nendpoints, isc_quota_t *quota,
+			 size_t nendpoints, const uint32_t max_clients,
 			 const uint32_t max_streams, ns_listenelt_t **target) {
 	isc_result_t result;
 
@@ -157,13 +220,20 @@ ns_listenelt_create_http(isc_mem_t *mctx, in_port_t http_port, isc_dscp_t dscp,
 	REQUIRE(endpoints != NULL && *endpoints != NULL);
 	REQUIRE(nendpoints > 0);
 
-	result = listenelt_create(mctx, http_port, dscp, acl, family, true, tls,
+	result = listenelt_create(mctx, http_port, acl, family, true, tls,
 				  tls_params, tlsctx_cache, target);
 	if (result == ISC_R_SUCCESS) {
 		(*target)->is_http = true;
 		(*target)->http_endpoints = endpoints;
 		(*target)->http_endpoints_number = nendpoints;
-		(*target)->http_quota = quota;
+		/*
+		 * 0 sized quota - means unlimited quota. We used to not
+		 * create a quota object in such a case, but we might need to
+		 * update the value of the quota during reconfiguration, so we
+		 * need to have a quota object in place anyway.
+		 */
+		(*target)->http_max_clients = max_clients == 0 ? UINT32_MAX
+							       : max_clients;
 		(*target)->max_concurrent_streams = max_streams;
 	} else {
 		size_t i;
@@ -238,9 +308,8 @@ ns_listenlist_detach(ns_listenlist_t **listp) {
 }
 
 isc_result_t
-ns_listenlist_default(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
-		      bool enabled, const uint16_t family,
-		      ns_listenlist_t **target) {
+ns_listenlist_default(isc_mem_t *mctx, in_port_t port, bool enabled,
+		      const uint16_t family, ns_listenlist_t **target) {
 	isc_result_t result;
 	dns_acl_t *acl = NULL;
 	ns_listenelt_t *elt = NULL;
@@ -256,8 +325,8 @@ ns_listenlist_default(isc_mem_t *mctx, in_port_t port, isc_dscp_t dscp,
 		goto cleanup;
 	}
 
-	result = ns_listenelt_create(mctx, port, dscp, acl, family, false, NULL,
-				     NULL, &elt);
+	result = ns_listenelt_create(mctx, port, acl, family, false, NULL, NULL,
+				     &elt);
 	if (result != ISC_R_SUCCESS) {
 		goto cleanup_acl;
 	}

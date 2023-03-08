@@ -85,14 +85,20 @@ dst__openssl_init(const char *engine) {
 			result = DST_R_NOENGINE;
 			goto cleanup_rm;
 		}
+		if (!ENGINE_init(e)) {
+			result = DST_R_NOENGINE;
+			goto cleanup_rm;
+		}
 		/* This will init the engine. */
 		if (!ENGINE_set_default(e, ENGINE_METHOD_ALL)) {
 			result = DST_R_NOENGINE;
-			goto cleanup_rm;
+			goto cleanup_init;
 		}
 	}
 
 	return (ISC_R_SUCCESS);
+cleanup_init:
+	ENGINE_finish(e);
 cleanup_rm:
 	if (e != NULL) {
 		ENGINE_free(e);
@@ -108,6 +114,7 @@ void
 dst__openssl_destroy(void) {
 #if !defined(OPENSSL_NO_ENGINE) && OPENSSL_API_LEVEL < 30000
 	if (e != NULL) {
+		ENGINE_finish(e);
 		ENGINE_free(e);
 	}
 	e = NULL;
@@ -134,7 +141,8 @@ toresult(isc_result_t fallback) {
 	default:
 #if defined(ECDSA_R_RANDOM_NUMBER_GENERATION_FAILED)
 		if (lib == ERR_R_ECDSA_LIB &&
-		    reason == ECDSA_R_RANDOM_NUMBER_GENERATION_FAILED) {
+		    reason == ECDSA_R_RANDOM_NUMBER_GENERATION_FAILED)
+		{
 			result = ISC_R_NOENTROPY;
 			break;
 		}

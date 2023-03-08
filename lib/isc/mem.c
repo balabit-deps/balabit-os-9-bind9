@@ -31,7 +31,6 @@
 #include <isc/os.h>
 #include <isc/print.h>
 #include <isc/refcount.h>
-#include <isc/strerr.h>
 #include <isc/string.h>
 #include <isc/types.h>
 #include <isc/util.h>
@@ -45,7 +44,8 @@
 #include <json_object.h>
 #endif /* HAVE_JSON_C */
 
-#if defined(HAVE_MALLOC_NP_H)
+/* On DragonFly BSD the header does not provide jemalloc API */
+#if defined(HAVE_MALLOC_NP_H) && !defined(__DragonFly__)
 #include <malloc_np.h>
 #elif defined(HAVE_JEMALLOC)
 #include <jemalloc/jemalloc.h>
@@ -207,7 +207,7 @@ static void
 print_active(isc_mem_t *ctx, FILE *out);
 #endif /* ISC_MEM_TRACKLINES */
 
-static inline size_t
+static size_t
 increment_malloced(isc_mem_t *ctx, size_t size) {
 	size_t malloced = atomic_fetch_add_relaxed(&ctx->malloced, size) + size;
 	size_t maxmalloced = atomic_load_relaxed(&ctx->maxmalloced);
@@ -220,7 +220,7 @@ increment_malloced(isc_mem_t *ctx, size_t size) {
 	return (malloced);
 }
 
-static inline size_t
+static size_t
 decrement_malloced(isc_mem_t *ctx, size_t size) {
 	size_t malloced = atomic_fetch_sub_relaxed(&ctx->malloced, size) - size;
 
@@ -319,8 +319,7 @@ delete_trace_entry(isc_mem_t *mctx, const void *ptr, size_t size,
 	 * If we get here, we didn't find the item on the list.  We're
 	 * screwed.
 	 */
-	INSIST(0);
-	ISC_UNREACHABLE();
+	UNREACHABLE();
 unlock:
 	MCTXUNLOCK(mctx);
 }
@@ -336,7 +335,7 @@ unlock:
 /*!
  * Perform a malloc, doing memory filling and overrun detection as necessary.
  */
-static inline void *
+static void *
 mem_get(isc_mem_t *ctx, size_t size, int flags) {
 	char *ret = NULL;
 
@@ -356,7 +355,7 @@ mem_get(isc_mem_t *ctx, size_t size, int flags) {
  * Perform a free, doing memory filling and overrun detection as necessary.
  */
 /* coverity[+free : arg-1] */
-static inline void
+static void
 mem_put(isc_mem_t *ctx, void *mem, size_t size, int flags) {
 	ADJUST_ZERO_ALLOCATION_SIZE(size);
 
@@ -366,7 +365,7 @@ mem_put(isc_mem_t *ctx, void *mem, size_t size, int flags) {
 	sdallocx(mem, size, flags);
 }
 
-static inline void *
+static void *
 mem_realloc(isc_mem_t *ctx, void *old_ptr, size_t old_size, size_t new_size,
 	    int flags) {
 	void *new_ptr = NULL;
@@ -396,7 +395,7 @@ mem_realloc(isc_mem_t *ctx, void *old_ptr, size_t old_size, size_t new_size,
 /*!
  * Update internal counters after a memory get.
  */
-static inline void
+static void
 mem_getstats(isc_mem_t *ctx, size_t size) {
 	struct stats *stats = stats_bucket(ctx, size);
 
@@ -412,15 +411,18 @@ mem_getstats(isc_mem_t *ctx, size_t size) {
 /*!
  * Update internal counters after a memory put.
  */
-static inline void
+static void
 mem_putstats(isc_mem_t *ctx, void *ptr, size_t size) {
 	struct stats *stats = stats_bucket(ctx, size);
+	atomic_size_t s, g;
 
 	UNUSED(ptr);
 
-	INSIST(atomic_fetch_sub_release(&ctx->inuse, size) >= size);
+	s = atomic_fetch_sub_release(&ctx->inuse, size);
+	INSIST(s >= size);
 
-	INSIST(atomic_fetch_sub_release(&stats->gets, 1) >= 1);
+	g = atomic_fetch_sub_release(&stats->gets, 1);
+	INSIST(g >= 1);
 
 	decrement_malloced(ctx, size);
 }
@@ -691,7 +693,7 @@ isc__mem_destroy(isc_mem_t **ctxp FLARG) {
 		}                                                      \
 	}
 
-static inline bool
+static bool
 hi_water(isc_mem_t *ctx) {
 	size_t inuse;
 	size_t maxinuse;
@@ -727,7 +729,7 @@ hi_water(isc_mem_t *ctx) {
 	return (true);
 }
 
-static inline bool
+static bool
 lo_water(isc_mem_t *ctx) {
 	size_t inuse;
 	size_t lowater = atomic_load_relaxed(&ctx->lo_water);
@@ -1181,8 +1183,6 @@ isc__mempool_create(isc_mem_t *restrict mctx, const size_t element_size,
 	mpctx = isc_mem_get(mctx, sizeof(isc_mempool_t));
 
 	*mpctx = (isc_mempool_t){
-		.magic = MEMPOOL_MAGIC,
-		.mctx = mctx,
 		.size = size,
 		.freemax = 1,
 		.fillcount = 1,
@@ -1194,6 +1194,9 @@ isc__mempool_create(isc_mem_t *restrict mctx, const size_t element_size,
 			mpctx, file, line, mctx);
 	}
 #endif /* ISC_MEM_TRACKLINES */
+
+	isc_mem_attach(mctx, &mpctx->mctx);
+	mpctx->magic = MEMPOOL_MAGIC;
 
 	*mpctxp = (isc_mempool_t *)mpctx;
 
@@ -1233,10 +1236,7 @@ isc__mempool_destroy(isc_mempool_t **restrict mpctxp FLARG) {
 #endif
 
 	if (mpctx->allocated > 0) {
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "isc_mempool_destroy(): mempool %s "
-				 "leaked memory",
-				 mpctx->name);
+		UNEXPECTED_ERROR("mempool %s leaked memory", mpctx->name);
 	}
 	REQUIRE(mpctx->allocated == 0);
 
@@ -1264,7 +1264,7 @@ isc__mempool_destroy(isc_mempool_t **restrict mpctxp FLARG) {
 
 	mpctx->magic = 0;
 
-	isc_mem_put(mpctx->mctx, mpctx, sizeof(isc_mempool_t));
+	isc_mem_putanddetach(&mpctx->mctx, mpctx, sizeof(isc_mempool_t));
 }
 
 void *
@@ -1404,7 +1404,8 @@ print_contexts(FILE *file) {
 	isc_mem_t *ctx;
 
 	for (ctx = ISC_LIST_HEAD(contexts); ctx != NULL;
-	     ctx = ISC_LIST_NEXT(ctx, link)) {
+	     ctx = ISC_LIST_NEXT(ctx, link))
+	{
 		fprintf(file, "context: %p (%s): %" PRIuFAST32 " references\n",
 			ctx, ctx->name[0] == 0 ? "<unknown>" : ctx->name,
 			isc_refcount_current(&ctx->references));
@@ -1414,7 +1415,7 @@ print_contexts(FILE *file) {
 }
 #endif
 
-static atomic_uintptr_t checkdestroyed = ATOMIC_VAR_INIT(0);
+static atomic_uintptr_t checkdestroyed = 0;
 
 void
 isc_mem_checkdestroyed(FILE *file) {
@@ -1436,8 +1437,7 @@ isc__mem_checkdestroyed(void) {
 			print_contexts(file);
 		}
 #endif /* if ISC_MEM_TRACKLINES */
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	UNLOCK(&contextslock);
 }
@@ -1561,7 +1561,8 @@ isc_mem_renderxml(void *writer0) {
 	LOCK(&contextslock);
 	lost = totallost;
 	for (ctx = ISC_LIST_HEAD(contexts); ctx != NULL;
-	     ctx = ISC_LIST_NEXT(ctx, link)) {
+	     ctx = ISC_LIST_NEXT(ctx, link))
+	{
 		xmlrc = xml_renderctx(ctx, &summary, writer);
 		if (xmlrc < 0) {
 			UNLOCK(&contextslock);
@@ -1703,7 +1704,8 @@ isc_mem_renderjson(void *memobj0) {
 	LOCK(&contextslock);
 	lost = totallost;
 	for (ctx = ISC_LIST_HEAD(contexts); ctx != NULL;
-	     ctx = ISC_LIST_NEXT(ctx, link)) {
+	     ctx = ISC_LIST_NEXT(ctx, link))
+	{
 		result = json_renderctx(ctx, &summary, ctxarray);
 		if (result != ISC_R_SUCCESS) {
 			UNLOCK(&contextslock);

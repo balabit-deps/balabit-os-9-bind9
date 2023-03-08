@@ -11,7 +11,6 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
-import os
 import shutil
 import subprocess
 
@@ -21,23 +20,28 @@ import pytest
 @pytest.fixture
 def gnutls_cli_executable():
     # Ensure gnutls-cli is available.
-    executable = shutil.which('gnutls-cli')
+    executable = shutil.which("gnutls-cli")
     if not executable:
-        pytest.skip('gnutls-cli not found in PATH')
+        pytest.skip("gnutls-cli not found in PATH")
 
     # Ensure gnutls-cli supports the --logfile command-line option.
-    args = [executable, '--logfile=/dev/null']
-    try:
-        with subprocess.check_output(args, stderr=subprocess.STDOUT) as _:
-            pass
-    except subprocess.CalledProcessError as exc:
-        stderr = exc.output
-    if b'illegal option' in stderr:
-        pytest.skip('gnutls-cli does not support the --logfile option')
+    output = subprocess.run(
+        [executable, "--logfile=/dev/null"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    ).stdout
+    if b"illegal option" in output:
+        pytest.skip("gnutls-cli does not support the --logfile option")
 
     return executable
 
 
 @pytest.fixture
-def named_tlsport():
-    return int(os.environ.get('TLSPORT', '853'))
+def sslyze_executable():
+    # Check whether sslyze is available.
+    executable = shutil.which("sslyze")
+    if not executable:
+        pytest.skip("sslyze not found in PATH")
+
+    return executable

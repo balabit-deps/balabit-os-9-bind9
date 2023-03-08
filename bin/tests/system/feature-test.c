@@ -11,6 +11,7 @@
  * information regarding copyright ownership.
  */
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,14 +23,6 @@
 
 #include <dns/edns.h>
 
-#ifndef MAXHOSTNAMELEN
-#ifdef HOST_NAME_MAX
-#define MAXHOSTNAMELEN HOST_NAME_MAX
-#else /* ifdef HOST_NAME_MAX */
-#define MAXHOSTNAMELEN 256
-#endif /* ifdef HOST_NAME_MAX */
-#endif /* ifndef MAXHOSTNAMELEN */
-
 static void
 usage(void) {
 	fprintf(stderr, "usage: feature-test <arg>\n");
@@ -37,9 +30,11 @@ usage(void) {
 	fprintf(stderr, "\t--edns-version\n");
 	fprintf(stderr, "\t--enable-dnsrps\n");
 	fprintf(stderr, "\t--enable-dnstap\n");
+	fprintf(stderr, "\t--enable-querytrace\n");
 	fprintf(stderr, "\t--gethostname\n");
 	fprintf(stderr, "\t--gssapi\n");
 	fprintf(stderr, "\t--have-geoip2\n");
+	fprintf(stderr, "\t--have-json-c\n");
 	fprintf(stderr, "\t--have-libxml2\n");
 	fprintf(stderr, "\t--ipv6only=no\n");
 	fprintf(stderr, "\t--tsan\n");
@@ -47,6 +42,7 @@ usage(void) {
 	fprintf(stderr, "\t--with-libidn2\n");
 	fprintf(stderr, "\t--with-lmdb\n");
 	fprintf(stderr, "\t--with-libnghttp2\n");
+	fprintf(stderr, "\t--with-zlib\n");
 }
 
 int
@@ -81,8 +77,16 @@ main(int argc, char **argv) {
 #endif /* ifdef HAVE_DNSTAP */
 	}
 
+	if (strcmp(argv[1], "--enable-querytrace") == 0) {
+#ifdef WANT_QUERYTRACE
+		return (0);
+#else  /* ifdef WANT_QUERYTRACE */
+		return (1);
+#endif /* ifdef WANT_QUERYTRACE */
+	}
+
 	if (strcmp(argv[1], "--gethostname") == 0) {
-		char hostname[MAXHOSTNAMELEN];
+		char hostname[_POSIX_HOST_NAME_MAX + 1];
 		int n;
 
 		n = gethostname(hostname, sizeof(hostname));
@@ -108,6 +112,14 @@ main(int argc, char **argv) {
 #else  /* ifdef HAVE_GEOIP2 */
 		return (1);
 #endif /* ifdef HAVE_GEOIP2 */
+	}
+
+	if (strcmp(argv[1], "--have-json-c") == 0) {
+#ifdef HAVE_JSON_C
+		return (0);
+#else  /* ifdef HAVE_JSON_C */
+		return (1);
+#endif /* ifdef HAVE_JSON_C */
 	}
 
 	if (strcmp(argv[1], "--have-libxml2") == 0) {
@@ -177,9 +189,17 @@ main(int argc, char **argv) {
 	if (strcmp(argv[1], "--with-libnghttp2") == 0) {
 #ifdef HAVE_LIBNGHTTP2
 		return (0);
-#else  /* ifdef HAVE_LMDB */
+#else  /* ifdef HAVE_LIBNGHTTP2 */
 		return (1);
-#endif /* ifdef HAVE_LMDB */
+#endif /* ifdef HAVE_LIBNGHTTP2 */
+	}
+
+	if (strcmp(argv[1], "--with-zlib") == 0) {
+#ifdef HAVE_ZLIB
+		return (0);
+#else  /* ifdef HAVE_ZLIB */
+		return (1);
+#endif /* ifdef HAVE_ZLIB */
 	}
 
 	fprintf(stderr, "unknown arg: %s\n", argv[1]);

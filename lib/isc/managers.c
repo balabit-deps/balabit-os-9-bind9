@@ -11,7 +11,6 @@
  * information regarding copyright ownership.
  */
 
-#include <isc/hp.h>
 #include <isc/managers.h>
 #include <isc/util.h>
 
@@ -28,15 +27,6 @@ isc_managers_create(isc_mem_t *mctx, size_t workers, size_t quantum,
 	isc_taskmgr_t *taskmgr = NULL;
 	isc_timermgr_t *timermgr = NULL;
 
-	/*
-	 * Currently, there are:
-	 * - 1 main thread
-	 * - 1 timer thread
-	 * - n netmgr threads
-	 * - n threadpool threads
-	 */
-	isc_hp_init(2 + 2 * workers);
-
 	REQUIRE(netmgrp != NULL && *netmgrp == NULL);
 	isc__netmgr_create(mctx, workers, &netmgr);
 	*netmgrp = netmgr;
@@ -47,8 +37,7 @@ isc_managers_create(isc_mem_t *mctx, size_t workers, size_t quantum,
 		INSIST(netmgr != NULL);
 		result = isc__taskmgr_create(mctx, quantum, netmgr, &taskmgr);
 		if (result != ISC_R_SUCCESS) {
-			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "isc_taskmgr_create() failed: %s",
+			UNEXPECTED_ERROR("isc_taskmgr_create() failed: %s",
 					 isc_result_totext(result));
 			goto fail;
 		}
@@ -59,8 +48,7 @@ isc_managers_create(isc_mem_t *mctx, size_t workers, size_t quantum,
 	if (timermgrp != NULL) {
 		result = isc__timermgr_create(mctx, &timermgr);
 		if (result != ISC_R_SUCCESS) {
-			UNEXPECTED_ERROR(__FILE__, __LINE__,
-					 "isc_timermgr_create() failed: %s",
+			UNEXPECTED_ERROR("isc_timermgr_create() failed: %s",
 					 isc_result_totext(result));
 			goto fail;
 		}

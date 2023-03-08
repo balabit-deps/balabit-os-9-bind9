@@ -48,7 +48,7 @@ addoptout(dns_message_t *message, dns_db_t *cache, dns_dbnode_t *node,
 	  dns_ttl_t maxttl, bool optout, bool secure,
 	  dns_rdataset_t *addedrdataset);
 
-static inline isc_result_t
+static isc_result_t
 copy_rdataset(dns_rdataset_t *rdataset, isc_buffer_t *buffer) {
 	isc_result_t result;
 	unsigned int count;
@@ -172,7 +172,8 @@ addoptout(dns_message_t *message, dns_db_t *cache, dns_dbnode_t *node,
 			     rdataset = ISC_LIST_NEXT(rdataset, link))
 			{
 				if ((rdataset->attributes &
-				     DNS_RDATASETATTR_NCACHE) == 0) {
+				     DNS_RDATASETATTR_NCACHE) == 0)
+				{
 					continue;
 				}
 				type = rdataset->type;
@@ -504,6 +505,7 @@ rdataset_settrust(dns_rdataset_t *rdataset, dns_trust_t trust) {
 	unsigned char *raw = rdataset->private3;
 
 	raw[-1] = (unsigned char)trust;
+	rdataset->trust = trust;
 }
 
 static dns_rdatasetmethods_t rdataset_methods = {
@@ -640,7 +642,8 @@ dns_ncache_getsigrdataset(dns_rdataset_t *ncacherdataset, dns_name_t *name,
 		isc_region_consume(&remaining, 2);
 
 		if (type != dns_rdatatype_rrsig ||
-		    !dns_name_equal(&tname, name)) {
+		    !dns_name_equal(&tname, name))
+		{
 			result = dns_rdataset_next(&rclone);
 			dns_rdata_reset(&rdata);
 			continue;

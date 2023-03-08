@@ -21,6 +21,8 @@
 typedef struct ssl_ctx_st isc_tlsctx_t;
 typedef struct ssl_st	  isc_tls_t;
 
+typedef struct x509_store_st isc_tls_cert_store_t;
+
 void
 isc_tlsctx_free(isc_tlsctx_t **ctpx);
 /*%<
@@ -28,6 +30,17 @@ isc_tlsctx_free(isc_tlsctx_t **ctpx);
  *
  * Requires:
  *\li	'ctxp' != NULL and '*ctxp' != NULL.
+ */
+
+void
+isc_tlsctx_attach(isc_tlsctx_t *src, isc_tlsctx_t **ptarget);
+/*%<
+ * Attach to the TLS context.
+ *
+ * Requires:
+ *\li	'src' != NULL;
+ *\li	'ptarget' != NULL;
+ *\li	'*ptarget' == NULL.
  */
 
 isc_result_t
@@ -50,6 +63,17 @@ isc_tlsctx_createclient(isc_tlsctx_t **ctxp);
  *
  * Requires:
  *\li	'ctxp' != NULL and '*ctxp' == NULL.
+ */
+
+isc_result_t
+isc_tlsctx_load_certificate(isc_tlsctx_t *ctx, const char *keyfile,
+			    const char *certfile);
+/*%<
+ * Load a TLS certificate into a TLS context.
+ *
+ * Requires:
+ *\li	'ctx' != NULL;
+ *\li	'keyfile' and 'certfile' are both non-NULL.
  */
 
 typedef enum isc_tls_protocol_version {
@@ -154,6 +178,16 @@ isc_tls_free(isc_tls_t **tlsp);
  *\li	'tlsp' != NULL and '*tlsp' != NULL.
  */
 
+const char *
+isc_tls_verify_peer_result_string(isc_tls_t *tls);
+/*%<
+ * Return a user readable description of a remote peer's certificate
+ * validation.
+ *
+ * Requires:
+ *\li	'tls' != NULL.
+ */
+
 #if HAVE_LIBNGHTTP2
 void
 isc_tlsctx_enable_http2client_alpn(isc_tlsctx_t *ctx);
@@ -183,6 +217,219 @@ isc_tlsctx_enable_dot_server_alpn(isc_tlsctx_t *ctx);
  *
  * Requires:
  *\li	'ctx' is not NULL.
+ */
+
+isc_result_t
+isc_tlsctx_enable_peer_verification(isc_tlsctx_t *ctx, const bool is_server,
+				    isc_tls_cert_store_t *store,
+				    const char		 *hostname,
+				    bool hostname_ignore_subject);
+/*%<
+ * Enable peer certificate and, optionally, hostname (for client contexts)
+ * verification.
+ *
+ * Requires:
+ *\li	'ctx' is not NULL;
+ *\li	'store' is not NULL.
+ */
+
+isc_result_t
+isc_tlsctx_load_client_ca_names(isc_tlsctx_t *ctx, const char *ca_bundle_file);
+/*%<
+ * Load the list of CA-certificate names from a CA-bundle file to
+ * send by the server to a client when requesting a peer certificate.
+ * Usually used in conjunction with
+ * isc_tlsctx_enable_peer_validation().
+ *
+ * Requires:
+ *\li	'ctx' is not NULL;
+ *\li	'ca_bundle_file' is not NULL.
+ */
+
+isc_result_t
+isc_tls_cert_store_create(const char		*ca_bundle_filename,
+			  isc_tls_cert_store_t **pstore);
+/*%<
+ * Create X509 certificate store. The 'ca_bundle_filename' might be
+ * 'NULL' or an empty string, which means use the default system wide
+ * bundle/directory.
+ *
+ * Requires:
+ *\li	'pstore' is a valid pointer to a pointer containing 'NULL'.
+ */
+
+void
+isc_tls_cert_store_free(isc_tls_cert_store_t **pstore);
+/*%<
+ * Free X509 certificate store.
+ *
+ * Requires:
+ *\li	'pstore' is a valid pointer to a pointer containing a non-'NULL' value.
+ */
+
+typedef struct isc_tlsctx_client_session_cache isc_tlsctx_client_session_cache_t;
+/*%<
+ * TLS client session cache is an object which allows efficient
+ * storing and retrieval of previously saved TLS sessions so that they
+ * can be resumed. This object is supposed to be a foundation for
+ * implementing TLS session resumption - a standard technique to
+ * reduce the cost of re-establishing a connection to the remote
+ * server endpoint.
+ *
+ * OpenSSL does server-side TLS session caching transparently by
+ * default. However, on the client-side, a TLS session to resume must
+ * be manually specified when establishing the TLS connection. The TLS
+ * client session cache is precisely the foundation for that.
+ *
+ * The cache has been designed to have the following characteristics:
+ *
+ * - Fixed maximal number of entries to not keep too many obsolete
+ * sessions within the cache;
+ *
+ * - The cache is indexed by character string keys. Each string is a
+ * key representing a remote endpoint (unique remote endpoint name,
+ * e.g. combination of the remote IP address and port);
+ *
+ * - Least Recently Used (LRU) cache replacement policy while allowing
+ * easy removal of obsolete entries;
+ *
+ * - Ability to store multiple TLS sessions associated with the given
+ * key (remote endpoint name). This characteristic is important if
+ * multiple connections to the same remote server can be established;
+ *
+ * - Ability to efficiently retrieve the most recent TLS sessions
+ * associated with the key (remote endpoint name).
+ *
+ * Because of these characteristics, the cache will end up having the
+ * necessary amount of resumable TLS session parameters to the most
+ * used remote endpoints ("hot entries") after a short period of
+ * initial use ("warmup").
+ *
+ * Attempting to resume TLS sessions is an optimisation, which is not
+ * guaranteed to succeed because it requires the same session to be
+ * present in the server session caches. If it is not the case, the
+ * usual handshake procedure takes place. However, when session
+ * resumption is successful, it reduces the amount of the
+ * computational resources required as well as the amount of data to
+ * be transmitted when (re)establishing the connection. Also, it
+ * reduces round trip time (by reducing the number of packets to
+ * transmit).
+ *
+ * This optimisation is important in the context of DNS because the
+ * amount of data within the full handshake messages might be
+ * comparable to or surpass the size of a typical DNS message.
+ */
+
+void
+isc_tlsctx_client_session_cache_create(
+	isc_mem_t *mctx, isc_tlsctx_t *ctx, const size_t max_entries,
+	isc_tlsctx_client_session_cache_t **cachep);
+/*%<
+ * Create a new TLS client session cache object.
+ *
+ * Requires:
+ *\li	'mctx' is a valid memory context object;
+ *\li	'ctx' is a valid TLS context object;
+ *\li	'max_entries' is a positive number;
+ *\li	'cachep' is a valid pointer to a pointer which must be equal to NULL.
+ */
+
+void
+isc_tlsctx_client_session_cache_attach(
+	isc_tlsctx_client_session_cache_t  *source,
+	isc_tlsctx_client_session_cache_t **targetp);
+/*%<
+ * Create a reference to the TLS client session cache object.
+ *
+ * Requires:
+ *\li	'source' is a valid TLS client session cache object;
+ *\li	'targetp' is a valid pointer to a pointer which must equal NULL.
+ */
+
+void
+isc_tlsctx_client_session_cache_detach(
+	isc_tlsctx_client_session_cache_t **cachep);
+/*%<
+ * Remove a reference to the TLS client session cache object.
+ *
+ * Requires:
+ *\li	'cachep' is a pointer to a pointer to a valid TLS client session cache
+ *object.
+ */
+
+void
+isc_tlsctx_client_session_cache_keep(isc_tlsctx_client_session_cache_t *cache,
+				     char *remote_peer_name, isc_tls_t *tls);
+/*%<
+ * Add a resumable TLS client session within 'tls' to the TLS client
+ * session cache object 'cache' and associate it with
+ * 'remote_server_name' string. Also, the oldest entry from the cache
+ * might get removed if the cache is full.
+ *
+ * Requires:
+ *\li	'cache' is a pointer to a valid TLS client session cache object;
+ *\li	'remote_peer_name' is a pointer to a non empty character string;
+ *\li	'tls' is a valid, non-'NULL' pointer to a TLS connection state object.
+ */
+
+void
+isc_tlsctx_client_session_cache_keep_sockaddr(
+	isc_tlsctx_client_session_cache_t *cache, isc_sockaddr_t *remote_peer,
+	isc_tls_t *tls);
+/*%<
+ * The same as 'isc_tlsctx_client_session_cache_keep()', but uses a
+ * 'isc_sockaddr_t' as a key, instead of a character string.
+ *
+ * Requires:
+ *\li	'remote_peer' is a valid, non-'NULL', pointer to an 'isc_sockaddr_t'
+ *object.
+ */
+
+void
+isc_tlsctx_client_session_cache_reuse(isc_tlsctx_client_session_cache_t *cache,
+				      char *remote_server_name, isc_tls_t *tls);
+/*%
+ * Try to restore a previously stored TLS session denoted by a remote
+ * server name as a key ('remote_server_name') into the given TLS
+ * connection state object ('tls'). The successfully restored session
+ * gets removed from the cache.
+ *
+ * Requires:
+ *\li	'cache' is a pointer to a valid TLS client session cache object;
+ *\li	'remote_peer_name' is a pointer to a non empty character string;
+ *\li	'tls' is a valid, non-'NULL' pointer to a TLS connection state object.
+ */
+
+void
+isc_tlsctx_client_session_cache_reuse_sockaddr(
+	isc_tlsctx_client_session_cache_t *cache, isc_sockaddr_t *remote_peer,
+	isc_tls_t *tls);
+/*%<
+ * The same as 'isc_tlsctx_client_session_cache_reuse()', but uses a
+ * 'isc_sockaddr_t' as a key, instead of a character string.
+ *
+ * Requires:
+ *\li	'remote_peer' is a valid, non-'NULL' pointer to an 'isc_sockaddr_t'
+ *object.
+ */
+
+const isc_tlsctx_t *
+isc_tlsctx_client_session_cache_getctx(isc_tlsctx_client_session_cache_t *cache);
+/*%<
+ * Returns a TLS context associated with the given TLS client
+ * session cache object. The function is intended to be used to
+ * implement the sanity checks ('INSIST()'s and 'REQUIRE()'s).
+ *
+ * Requires:
+ *\li	'cache' is a pointer to a valid TLS client session cache object.
+ */
+
+#define ISC_TLSCTX_CLIENT_SESSION_CACHE_DEFAULT_SIZE (150)
+/*%<
+ * The default maximum size of a TLS client session cache. The value
+ * should be large enough to hold enough sessions to successfully
+ * re-establish connections to the most remote TLS servers, but not
+ * too big to avoid keeping too much obsolete sessions.
  */
 
 typedef struct isc_tlsctx_cache isc_tlsctx_cache_t;
@@ -221,13 +468,14 @@ typedef enum {
 } isc_tlsctx_cache_transport_t;
 /*%< TLS context cache transport type values. */
 
-isc_tlsctx_cache_t *
-isc_tlsctx_cache_new(isc_mem_t *mctx);
+void
+isc_tlsctx_cache_create(isc_mem_t *mctx, isc_tlsctx_cache_t **cachep);
 /*%<
  * Create a new TLS context cache object.
  *
  * Requires:
- *\li	'mctx' is a valid memory context.
+ *\li	'mctx' is a valid memory context;
+ *\li	'cachep' is a valid pointer to a pointer which must be equal to NULL.
  */
 
 void
@@ -252,15 +500,27 @@ isc_tlsctx_cache_detach(isc_tlsctx_cache_t **cachep);
  */
 
 isc_result_t
-isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
-		     const isc_tlsctx_cache_transport_t transport,
-		     const uint16_t family, isc_tlsctx_t *ctx,
-		     isc_tlsctx_t **pfound);
+isc_tlsctx_cache_add(
+	isc_tlsctx_cache_t *cache, const char *name,
+	const isc_tlsctx_cache_transport_t transport, const uint16_t family,
+	isc_tlsctx_t *ctx, isc_tls_cert_store_t *store,
+	isc_tlsctx_client_session_cache_t *client_sess_cache,
+	isc_tlsctx_t **pfound, isc_tls_cert_store_t **pfound_store,
+	isc_tlsctx_client_session_cache_t **pfound_client_sess_cache);
 /*%<
  *
- * Add a new TLS context to the TLS context cache. 'pfound' is an
- * optional pointer, which can be used to retrieve an already
- * existing TLS context object in a case it exists.
+ * Add a new TLS context and its associated data to the TLS context
+ * cache. 'pfound' is an optional pointer, which can be used to
+ * retrieve an already existing TLS context object in a case it
+ * exists.
+ *
+ * The passed certificates store object ('store') possession is
+ * transferred to the cache object in a case of success. In some cases
+ * it might be destroyed immediately upon the call completion.
+ *
+ * The possession of the passed TLS client session cache
+ * ('client_sess_cache') is also transferred to the cache object in a
+ * case of success.
  *
  * Requires:
  *\li	'cache' is a valid pointer to a TLS context cache object;
@@ -268,7 +528,11 @@ isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
  *\li	'transport' is a valid transport identifier (currently only
  *       TLS/DoT and HTTPS/DoH are supported);
  *\li	'family' - either 'AF_INET' or 'AF_INET6';
- *\li   'ctx' - a valid pointer to a valid TLS context object.
+ *\li   'ctx' - a valid pointer to a valid TLS context object;
+ *\li   'store' - a valid pointer to a valid TLS certificates store object or
+ *		'NULL';
+ *\li   'client_sess_cache' - a valid pointer to a valid TLS client sessions
+ *cache object or 'NULL.
  *
  * Returns:
  *\li	#ISC_R_EXISTS - node of the same key already exists;
@@ -276,11 +540,13 @@ isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
  */
 
 isc_result_t
-isc_tlsctx_cache_find(isc_tlsctx_cache_t *cache, const char *name,
-		      const isc_tlsctx_cache_transport_t transport,
-		      const uint16_t family, isc_tlsctx_t **pctx);
+isc_tlsctx_cache_find(
+	isc_tlsctx_cache_t *cache, const char *name,
+	const isc_tlsctx_cache_transport_t transport, const uint16_t family,
+	isc_tlsctx_t **pctx, isc_tls_cert_store_t **pstore,
+	isc_tlsctx_client_session_cache_t **pfound_client_sess_cache);
 /*%<
- * Look up a TLS context in the TLS context cache.
+ * Look up a TLS context and its associated data in the TLS context cache.
  *
  * Requires:
  *\li	'cache' is a valid pointer to a TLS context cache object;
@@ -288,9 +554,34 @@ isc_tlsctx_cache_find(isc_tlsctx_cache_t *cache, const char *name,
  *\li	'transport' - a valid transport identifier (currently only
  *       TLS/DoT and HTTPS/DoH are supported;
  *\li	'family' - either 'AF_INET' or 'AF_INET6';
- *\li   'pctx' - a valid pointer to a non-NULL pointer.
+ *\li   'pctx' - a valid pointer to a non-NULL pointer;
+ *\li   'pstore' - a valid pointer to a non-NULL pointer or 'NULL'.
+ *\li   'pfound_client_sess_cache' - a valid pointer to a non-NULL pointer or
+ *'NULL'.
  *
  * Returns:
  *\li	#ISC_R_SUCCESS - the context has been found;
- *\li	#ISC_R_NOTFOUND	- the context has not been found.
+ *\li	#ISC_R_NOTFOUND	- the context has not been found. In such a case,
+ *		'pstore' still might get initialised as there is one to many
+ *		relation between stores and contexts.
+ */
+
+void
+isc_tlsctx_set_random_session_id_context(isc_tlsctx_t *ctx);
+/*%<
+ * Set context within which session can be reused to a randomly
+ * generated value. This one is used for TLS session resumption using
+ * session IDs. See OpenSSL documentation for
+ * 'SSL_CTX_set_session_id_context()'.
+ *
+ * It might be worth noting that usually session ID contexts are kept
+ * static for an application and particular certificate
+ * combination. However, for the cases when exporting server side TLS
+ * session cache to/loading from external memory is not required, we
+ * might use random IDs just fine. See,
+ * e.g. 'ngx_ssl_session_id_context()' in NGINX for an example of how
+ * a session ID might be obtained.
+ *
+ * Requires:
+ *\li   'ctx' - a valid non-NULL pointer;
  */

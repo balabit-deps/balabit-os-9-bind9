@@ -12,12 +12,14 @@
  */
 
 #include <inttypes.h>
+#include <netinet/in.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #if HAVE_LIBNGHTTP2
 #include <nghttp2/nghttp2.h>
 #endif /* HAVE_LIBNGHTTP2 */
+#include <arpa/inet.h>
 
 #include <openssl/bn.h>
 #include <openssl/conf.h>
@@ -28,6 +30,8 @@
 #include <openssl/opensslv.h>
 #include <openssl/rand.h>
 #include <openssl/rsa.h>
+#include <openssl/x509_vfy.h>
+#include <openssl/x509v3.h>
 
 #include <isc/atomic.h>
 #include <isc/ht.h>
@@ -39,6 +43,7 @@
 #include <isc/random.h>
 #include <isc/refcount.h>
 #include <isc/rwlock.h>
+#include <isc/sockaddr.h>
 #include <isc/thread.h>
 #include <isc/tls.h>
 #include <isc/util.h>
@@ -51,8 +56,8 @@
 
 static isc_once_t init_once = ISC_ONCE_INIT;
 static isc_once_t shut_once = ISC_ONCE_INIT;
-static atomic_bool init_done = ATOMIC_VAR_INIT(false);
-static atomic_bool shut_done = ATOMIC_VAR_INIT(false);
+static atomic_bool init_done = false;
+static atomic_bool shut_done = false;
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 static isc_mutex_t *locks = NULL;
@@ -117,14 +122,12 @@ tls_initialize(void) {
 
 	/* Protect ourselves against unseeded PRNG */
 	if (RAND_status() != 1) {
-		FATAL_ERROR(__FILE__, __LINE__,
-			    "OpenSSL pseudorandom number generator "
+		FATAL_ERROR("OpenSSL pseudorandom number generator "
 			    "cannot be initialized (see the `PRNG not "
 			    "seeded' message in the OpenSSL FAQ)");
 	}
 
-	REQUIRE(atomic_compare_exchange_strong(&init_done, &(bool){ false },
-					       true));
+	atomic_compare_exchange_enforced(&init_done, &(bool){ false }, true);
 }
 
 void
@@ -162,8 +165,7 @@ tls_shutdown(void) {
 	}
 #endif
 
-	REQUIRE(atomic_compare_exchange_strong(&shut_done, &(bool){ false },
-					       true));
+	atomic_compare_exchange_enforced(&shut_done, &(bool){ false }, true);
 }
 
 void
@@ -182,6 +184,16 @@ isc_tlsctx_free(isc_tlsctx_t **ctxp) {
 	*ctxp = NULL;
 
 	SSL_CTX_free(ctx);
+}
+
+void
+isc_tlsctx_attach(isc_tlsctx_t *src, isc_tlsctx_t **ptarget) {
+	REQUIRE(src != NULL);
+	REQUIRE(ptarget != NULL && *ptarget == NULL);
+
+	RUNTIME_CHECK(SSL_CTX_up_ref(src) == 1);
+
+	*ptarget = src;
 }
 
 #if HAVE_SSL_CTX_SET_KEYLOG_CALLBACK
@@ -253,6 +265,26 @@ ssl_error:
 		      errbuf);
 
 	return (ISC_R_TLSERROR);
+}
+
+isc_result_t
+isc_tlsctx_load_certificate(isc_tlsctx_t *ctx, const char *keyfile,
+			    const char *certfile) {
+	int rv;
+	REQUIRE(ctx != NULL);
+	REQUIRE(keyfile != NULL);
+	REQUIRE(certfile != NULL);
+
+	rv = SSL_CTX_use_certificate_chain_file(ctx, certfile);
+	if (rv != 1) {
+		return (ISC_R_TLSERROR);
+	}
+	rv = SSL_CTX_use_PrivateKey_file(ctx, keyfile, SSL_FILETYPE_PEM);
+	if (rv != 1) {
+		return (ISC_R_TLSERROR);
+	}
+
+	return (ISC_R_SUCCESS);
 }
 
 isc_result_t
@@ -443,13 +475,9 @@ isc_tlsctx_createserver(const char *keyfile, const char *certfile,
 		X509_free(cert);
 		EVP_PKEY_free(pkey);
 	} else {
-		rv = SSL_CTX_use_certificate_chain_file(ctx, certfile);
-		if (rv != 1) {
-			goto ssl_error;
-		}
-		rv = SSL_CTX_use_PrivateKey_file(ctx, keyfile,
-						 SSL_FILETYPE_PEM);
-		if (rv != 1) {
+		isc_result_t result;
+		result = isc_tlsctx_load_certificate(ctx, keyfile, certfile);
+		if (result != ISC_R_SUCCESS) {
 			goto ssl_error;
 		}
 	}
@@ -511,8 +539,7 @@ get_tls_version_disable_bit(const isc_tls_protocol_version_t tls_ver) {
 #endif
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 		break;
 	};
 
@@ -741,6 +768,13 @@ isc_tls_free(isc_tls_t **tlsp) {
 	*tlsp = NULL;
 }
 
+const char *
+isc_tls_verify_peer_result_string(isc_tls_t *tls) {
+	REQUIRE(tls != NULL);
+
+	return (X509_verify_cert_error_string(SSL_get_verify_result(tls)));
+}
+
 #if HAVE_LIBNGHTTP2
 #ifndef OPENSSL_NO_NEXTPROTONEG
 /*
@@ -901,8 +935,146 @@ isc_tlsctx_enable_dot_server_alpn(isc_tlsctx_t *tls) {
 #endif // OPENSSL_VERSION_NUMBER >= 0x10002000L
 }
 
+isc_result_t
+isc_tlsctx_enable_peer_verification(isc_tlsctx_t *tlsctx, const bool is_server,
+				    isc_tls_cert_store_t *store,
+				    const char *hostname,
+				    bool hostname_ignore_subject) {
+	int ret = 0;
+	REQUIRE(tlsctx != NULL);
+	REQUIRE(store != NULL);
+
+	/* Set the hostname/IP address. */
+	if (!is_server && hostname != NULL && *hostname != '\0') {
+		struct in6_addr sa6;
+		struct in_addr sa;
+		X509_VERIFY_PARAM *param = SSL_CTX_get0_param(tlsctx);
+		unsigned int hostflags = X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS;
+
+		/* It might be an IP address. */
+		if (inet_pton(AF_INET6, hostname, &sa6) == 1 ||
+		    inet_pton(AF_INET, hostname, &sa) == 1)
+		{
+			ret = X509_VERIFY_PARAM_set1_ip_asc(param, hostname);
+		} else {
+			/* It seems that it is a host name. Let's set it. */
+			ret = X509_VERIFY_PARAM_set1_host(param, hostname, 0);
+		}
+		if (ret != 1) {
+			return (ISC_R_FAILURE);
+		}
+
+#ifdef X509_CHECK_FLAG_NEVER_CHECK_SUBJECT
+		/*
+		 * According to the RFC 8310, Section 8.1, Subject field MUST
+		 * NOT be inspected when verifying a hostname when using
+		 * DoT. Only SubjectAltName must be checked instead. That is
+		 * not the case for HTTPS, though.
+		 *
+		 * Unfortunately, some quite old versions of OpenSSL (< 1.1.1)
+		 * might lack the functionality to implement that. It should
+		 * have very little real-world consequences, as most of the
+		 * production-ready certificates issued by real CAs will have
+		 * SubjectAltName set. In such a case, the Subject field is
+		 * ignored.
+		 */
+		if (hostname_ignore_subject) {
+			hostflags |= X509_CHECK_FLAG_NEVER_CHECK_SUBJECT;
+		}
+#else
+		UNUSED(hostname_ignore_subject);
+#endif
+		X509_VERIFY_PARAM_set_hostflags(param, hostflags);
+	}
+
+	/* "Attach" the cert store to the context */
+	SSL_CTX_set1_cert_store(tlsctx, store);
+
+	/* enable verification */
+	if (is_server) {
+		SSL_CTX_set_verify(tlsctx,
+				   SSL_VERIFY_PEER |
+					   SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
+				   NULL);
+	} else {
+		SSL_CTX_set_verify(tlsctx, SSL_VERIFY_PEER, NULL);
+	}
+
+	return (ISC_R_SUCCESS);
+}
+
+isc_result_t
+isc_tlsctx_load_client_ca_names(isc_tlsctx_t *ctx, const char *ca_bundle_file) {
+	STACK_OF(X509_NAME) * cert_names;
+	REQUIRE(ctx != NULL);
+	REQUIRE(ca_bundle_file != NULL);
+
+	cert_names = SSL_load_client_CA_file(ca_bundle_file);
+	if (cert_names == NULL) {
+		return (ISC_R_FAILURE);
+	}
+
+	SSL_CTX_set_client_CA_list(ctx, cert_names);
+
+	return (ISC_R_SUCCESS);
+}
+
+isc_result_t
+isc_tls_cert_store_create(const char *ca_bundle_filename,
+			  isc_tls_cert_store_t **pstore) {
+	int ret = 0;
+	isc_tls_cert_store_t *store = NULL;
+	REQUIRE(pstore != NULL && *pstore == NULL);
+
+	store = X509_STORE_new();
+	if (store == NULL) {
+		goto error;
+	}
+
+	/* Let's treat empty string as the default (system wide) store */
+	if (ca_bundle_filename != NULL && *ca_bundle_filename == '\0') {
+		ca_bundle_filename = NULL;
+	}
+
+	if (ca_bundle_filename == NULL) {
+		ret = X509_STORE_set_default_paths(store);
+	} else {
+		ret = X509_STORE_load_locations(store, ca_bundle_filename,
+						NULL);
+	}
+
+	if (ret == 0) {
+		goto error;
+	}
+
+	*pstore = store;
+	return (ISC_R_SUCCESS);
+
+error:
+	if (store != NULL) {
+		X509_STORE_free(store);
+	}
+	return (ISC_R_FAILURE);
+}
+
+void
+isc_tls_cert_store_free(isc_tls_cert_store_t **pstore) {
+	isc_tls_cert_store_t *store;
+	REQUIRE(pstore != NULL && *pstore != NULL);
+
+	store = *pstore;
+
+	X509_STORE_free(store);
+
+	*pstore = NULL;
+}
+
 #define TLSCTX_CACHE_MAGIC    ISC_MAGIC('T', 'l', 'S', 'c')
 #define VALID_TLSCTX_CACHE(t) ISC_MAGIC_VALID(t, TLSCTX_CACHE_MAGIC)
+
+#define TLSCTX_CLIENT_SESSION_CACHE_MAGIC ISC_MAGIC('T', 'l', 'C', 'c')
+#define VALID_TLSCTX_CLIENT_SESSION_CACHE(t) \
+	ISC_MAGIC_VALID(t, TLSCTX_CLIENT_SESSION_CACHE_MAGIC)
 
 typedef struct isc_tlsctx_cache_entry {
 	/*
@@ -911,14 +1083,13 @@ typedef struct isc_tlsctx_cache_entry {
 	 * session-resumption cache.
 	 */
 	isc_tlsctx_t *ctx[isc_tlsctx_cache_count - 1][2];
+	isc_tlsctx_client_session_cache_t
+		*client_sess_cache[isc_tlsctx_cache_count - 1][2];
 	/*
-	 * TODO: add a certificate store for an intermediate certificates
-	 * from a CA-bundle file. One is enough for all the contexts defined
-	 * above. We will need that for validation.
-	 *
-	 * X509_STORE *ca_bundle_store; // TODO:  define the utilities to
-	 * operate on these ones
+	 * One certificate store is enough for all the contexts defined
+	 * above. We need that for peer validation.
 	 */
+	isc_tls_cert_store_t *ca_store;
 } isc_tlsctx_cache_entry_t;
 
 struct isc_tlsctx_cache {
@@ -930,20 +1101,21 @@ struct isc_tlsctx_cache {
 	isc_ht_t *data;
 };
 
-isc_tlsctx_cache_t *
-isc_tlsctx_cache_new(isc_mem_t *mctx) {
+void
+isc_tlsctx_cache_create(isc_mem_t *mctx, isc_tlsctx_cache_t **cachep) {
 	isc_tlsctx_cache_t *nc;
 
+	REQUIRE(cachep != NULL && *cachep == NULL);
 	nc = isc_mem_get(mctx, sizeof(*nc));
 
 	*nc = (isc_tlsctx_cache_t){ .magic = TLSCTX_CACHE_MAGIC };
 	isc_refcount_init(&nc->references, 1);
 	isc_mem_attach(mctx, &nc->mctx);
 
-	RUNTIME_CHECK(isc_ht_init(&nc->data, mctx, 5) == ISC_R_SUCCESS);
+	isc_ht_init(&nc->data, mctx, 5, ISC_HT_CASE_SENSITIVE);
 	isc_rwlock_init(&nc->rwlock, 0, 0);
 
-	return (nc);
+	*cachep = nc;
 }
 
 void
@@ -966,7 +1138,15 @@ tlsctx_cache_entry_destroy(isc_mem_t *mctx, isc_tlsctx_cache_entry_t *entry) {
 			if (entry->ctx[i][k] != NULL) {
 				isc_tlsctx_free(&entry->ctx[i][k]);
 			}
+
+			if (entry->client_sess_cache[i][k] != NULL) {
+				isc_tlsctx_client_session_cache_detach(
+					&entry->client_sess_cache[i][k]);
+			}
 		}
+	}
+	if (entry->ca_store != NULL) {
+		isc_tls_cert_store_free(&entry->ca_store);
 	}
 	isc_mem_put(mctx, entry, sizeof(*entry));
 }
@@ -980,7 +1160,7 @@ tlsctx_cache_destroy(isc_tlsctx_cache_t *cache) {
 
 	isc_refcount_destroy(&cache->references);
 
-	RUNTIME_CHECK(isc_ht_iter_create(cache->data, &it) == ISC_R_SUCCESS);
+	isc_ht_iter_create(cache->data, &it);
 	for (result = isc_ht_iter_first(it); result == ISC_R_SUCCESS;
 	     result = isc_ht_iter_delcurrent_next(it))
 	{
@@ -1012,16 +1192,21 @@ isc_tlsctx_cache_detach(isc_tlsctx_cache_t **cachep) {
 }
 
 isc_result_t
-isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
-		     const isc_tlsctx_cache_transport_t transport,
-		     const uint16_t family, isc_tlsctx_t *ctx,
-		     isc_tlsctx_t **pfound) {
+isc_tlsctx_cache_add(
+	isc_tlsctx_cache_t *cache, const char *name,
+	const isc_tlsctx_cache_transport_t transport, const uint16_t family,
+	isc_tlsctx_t *ctx, isc_tls_cert_store_t *store,
+	isc_tlsctx_client_session_cache_t *client_sess_cache,
+	isc_tlsctx_t **pfound, isc_tls_cert_store_t **pfound_store,
+	isc_tlsctx_client_session_cache_t **pfound_client_sess_cache) {
 	isc_result_t result = ISC_R_FAILURE;
 	size_t name_len, tr_offset;
 	isc_tlsctx_cache_entry_t *entry = NULL;
 	bool ipv6;
 
 	REQUIRE(VALID_TLSCTX_CACHE(cache));
+	REQUIRE(client_sess_cache == NULL ||
+		VALID_TLSCTX_CLIENT_SESSION_CACHE(client_sess_cache));
 	REQUIRE(name != NULL && *name != '\0');
 	REQUIRE(transport > isc_tlsctx_cache_none &&
 		transport < isc_tlsctx_cache_count);
@@ -1037,19 +1222,44 @@ isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
 	result = isc_ht_find(cache->data, (const uint8_t *)name, name_len,
 			     (void **)&entry);
 	if (result == ISC_R_SUCCESS && entry->ctx[tr_offset][ipv6] != NULL) {
+		isc_tlsctx_client_session_cache_t *found_client_sess_cache;
 		/* The entry exists. */
 		if (pfound != NULL) {
 			INSIST(*pfound == NULL);
 			*pfound = entry->ctx[tr_offset][ipv6];
 		}
+
+		if (pfound_store != NULL && entry->ca_store != NULL) {
+			INSIST(*pfound_store == NULL);
+			*pfound_store = entry->ca_store;
+		}
+
+		found_client_sess_cache =
+			entry->client_sess_cache[tr_offset][ipv6];
+		if (pfound_client_sess_cache != NULL &&
+		    found_client_sess_cache != NULL)
+		{
+			INSIST(*pfound_client_sess_cache == NULL);
+			*pfound_client_sess_cache = found_client_sess_cache;
+		}
 		result = ISC_R_EXISTS;
 	} else if (result == ISC_R_SUCCESS &&
-		   entry->ctx[tr_offset][ipv6] == NULL) {
+		   entry->ctx[tr_offset][ipv6] == NULL)
+	{
 		/*
-		 * The hast table entry exists, but is not filled for this
+		 * The hash table entry exists, but is not filled for this
 		 * particular transport/IP type combination.
 		 */
 		entry->ctx[tr_offset][ipv6] = ctx;
+		entry->client_sess_cache[tr_offset][ipv6] = client_sess_cache;
+		/*
+		 * As the passed certificates store object is supposed
+		 * to be internally managed by the cache object anyway,
+		 * we might destroy the unneeded store object right now.
+		 */
+		if (store != NULL && store != entry->ca_store) {
+			isc_tls_cert_store_free(&store);
+		}
 		result = ISC_R_SUCCESS;
 	} else {
 		/*
@@ -1060,6 +1270,8 @@ isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
 		/* Oracle/Red Hat Linux, GCC bug #53119 */
 		memset(entry, 0, sizeof(*entry));
 		entry->ctx[tr_offset][ipv6] = ctx;
+		entry->client_sess_cache[tr_offset][ipv6] = client_sess_cache;
+		entry->ca_store = store;
 		RUNTIME_CHECK(isc_ht_add(cache->data, (const uint8_t *)name,
 					 name_len,
 					 (void *)entry) == ISC_R_SUCCESS);
@@ -1072,9 +1284,11 @@ isc_tlsctx_cache_add(isc_tlsctx_cache_t *cache, const char *name,
 }
 
 isc_result_t
-isc_tlsctx_cache_find(isc_tlsctx_cache_t *cache, const char *name,
-		      const isc_tlsctx_cache_transport_t transport,
-		      const uint16_t family, isc_tlsctx_t **pctx) {
+isc_tlsctx_cache_find(
+	isc_tlsctx_cache_t *cache, const char *name,
+	const isc_tlsctx_cache_transport_t transport, const uint16_t family,
+	isc_tlsctx_t **pctx, isc_tls_cert_store_t **pstore,
+	isc_tlsctx_client_session_cache_t **pfound_client_sess_cache) {
 	isc_result_t result = ISC_R_FAILURE;
 	size_t tr_offset;
 	isc_tlsctx_cache_entry_t *entry = NULL;
@@ -1094,10 +1308,28 @@ isc_tlsctx_cache_find(isc_tlsctx_cache_t *cache, const char *name,
 
 	result = isc_ht_find(cache->data, (const uint8_t *)name, strlen(name),
 			     (void **)&entry);
+
+	if (result == ISC_R_SUCCESS && pstore != NULL &&
+	    entry->ca_store != NULL)
+	{
+		*pstore = entry->ca_store;
+	}
+
 	if (result == ISC_R_SUCCESS && entry->ctx[tr_offset][ipv6] != NULL) {
+		isc_tlsctx_client_session_cache_t *found_client_sess_cache =
+			entry->client_sess_cache[tr_offset][ipv6];
+
 		*pctx = entry->ctx[tr_offset][ipv6];
+
+		if (pfound_client_sess_cache != NULL &&
+		    found_client_sess_cache != NULL)
+		{
+			INSIST(*pfound_client_sess_cache == NULL);
+			*pfound_client_sess_cache = found_client_sess_cache;
+		}
 	} else if (result == ISC_R_SUCCESS &&
-		   entry->ctx[tr_offset][ipv6] == NULL) {
+		   entry->ctx[tr_offset][ipv6] == NULL)
+	{
 		result = ISC_R_NOTFOUND;
 	} else {
 		INSIST(result != ISC_R_SUCCESS);
@@ -1106,4 +1338,335 @@ isc_tlsctx_cache_find(isc_tlsctx_cache_t *cache, const char *name,
 	RWUNLOCK(&cache->rwlock, isc_rwlocktype_read);
 
 	return (result);
+}
+
+typedef struct client_session_cache_entry client_session_cache_entry_t;
+
+typedef struct client_session_cache_bucket {
+	char *bucket_key;
+	size_t bucket_key_len;
+	/* Cache entries within the bucket (from the oldest to the newest). */
+	ISC_LIST(client_session_cache_entry_t) entries;
+} client_session_cache_bucket_t;
+
+struct client_session_cache_entry {
+	SSL_SESSION *session;
+	client_session_cache_bucket_t *bucket; /* "Parent" bucket pointer. */
+	ISC_LINK(client_session_cache_entry_t) bucket_link;
+	ISC_LINK(client_session_cache_entry_t) cache_link;
+};
+
+struct isc_tlsctx_client_session_cache {
+	uint32_t magic;
+	isc_refcount_t references;
+	isc_mem_t *mctx;
+
+	/*
+	 * We need to keep a reference to the related TLS context in order
+	 * to ensure that it remains valid while the TLS client sessions
+	 * cache object is valid, as every TLS session object
+	 * (SSL_SESSION) is "tied" to a particular context.
+	 */
+	isc_tlsctx_t *ctx;
+
+	/*
+	 * The idea is to have one bucket per remote server. Each bucket,
+	 * can maintain multiple TLS sessions to that server, as BIND
+	 * might want to establish multiple TLS connections to the remote
+	 * server at once.
+	 */
+	isc_ht_t *buckets;
+
+	/*
+	 * The list of all current entries within the cache maintained in
+	 * LRU-manner, so that the oldest entry might be efficiently
+	 * removed.
+	 */
+	ISC_LIST(client_session_cache_entry_t) lru_entries;
+	/* Number of the entries within the cache. */
+	size_t nentries;
+	/* Maximum number of the entries within the cache. */
+	size_t max_entries;
+
+	isc_mutex_t lock;
+};
+
+void
+isc_tlsctx_client_session_cache_create(
+	isc_mem_t *mctx, isc_tlsctx_t *ctx, const size_t max_entries,
+	isc_tlsctx_client_session_cache_t **cachep) {
+	isc_tlsctx_client_session_cache_t *nc;
+
+	REQUIRE(ctx != NULL);
+	REQUIRE(max_entries > 0);
+	REQUIRE(cachep != NULL && *cachep == NULL);
+
+	nc = isc_mem_get(mctx, sizeof(*nc));
+
+	*nc = (isc_tlsctx_client_session_cache_t){ .max_entries = max_entries };
+	isc_refcount_init(&nc->references, 1);
+	isc_mem_attach(mctx, &nc->mctx);
+	isc_tlsctx_attach(ctx, &nc->ctx);
+
+	isc_ht_init(&nc->buckets, mctx, 5, ISC_HT_CASE_SENSITIVE);
+	ISC_LIST_INIT(nc->lru_entries);
+	isc_mutex_init(&nc->lock);
+
+	nc->magic = TLSCTX_CLIENT_SESSION_CACHE_MAGIC;
+
+	*cachep = nc;
+}
+
+void
+isc_tlsctx_client_session_cache_attach(
+	isc_tlsctx_client_session_cache_t *source,
+	isc_tlsctx_client_session_cache_t **targetp) {
+	REQUIRE(VALID_TLSCTX_CLIENT_SESSION_CACHE(source));
+	REQUIRE(targetp != NULL && *targetp == NULL);
+
+	isc_refcount_increment(&source->references);
+
+	*targetp = source;
+}
+
+static void
+client_cache_entry_delete(isc_tlsctx_client_session_cache_t *restrict cache,
+			  client_session_cache_entry_t *restrict entry) {
+	client_session_cache_bucket_t *restrict bucket = entry->bucket;
+
+	/* Unlink and free the cache entry */
+	ISC_LIST_UNLINK(bucket->entries, entry, bucket_link);
+	ISC_LIST_UNLINK(cache->lru_entries, entry, cache_link);
+	cache->nentries--;
+	(void)SSL_SESSION_free(entry->session);
+	isc_mem_put(cache->mctx, entry, sizeof(*entry));
+
+	/* The bucket is empty - let's remove it */
+	if (ISC_LIST_EMPTY(bucket->entries)) {
+		RUNTIME_CHECK(isc_ht_delete(cache->buckets,
+					    (const uint8_t *)bucket->bucket_key,
+					    bucket->bucket_key_len) ==
+			      ISC_R_SUCCESS);
+
+		isc_mem_free(cache->mctx, bucket->bucket_key);
+		isc_mem_put(cache->mctx, bucket, sizeof(*bucket));
+	}
+}
+
+void
+isc_tlsctx_client_session_cache_detach(
+	isc_tlsctx_client_session_cache_t **cachep) {
+	isc_tlsctx_client_session_cache_t *cache = NULL;
+	client_session_cache_entry_t *entry = NULL, *next = NULL;
+
+	REQUIRE(cachep != NULL);
+
+	cache = *cachep;
+	*cachep = NULL;
+
+	REQUIRE(VALID_TLSCTX_CLIENT_SESSION_CACHE(cache));
+
+	if (isc_refcount_decrement(&cache->references) != 1) {
+		return;
+	}
+
+	cache->magic = 0;
+
+	isc_refcount_destroy(&cache->references);
+
+	entry = ISC_LIST_HEAD(cache->lru_entries);
+	while (entry != NULL) {
+		next = ISC_LIST_NEXT(entry, cache_link);
+		client_cache_entry_delete(cache, entry);
+		entry = next;
+	}
+
+	RUNTIME_CHECK(isc_ht_count(cache->buckets) == 0);
+	isc_ht_destroy(&cache->buckets);
+
+	isc_mutex_destroy(&cache->lock);
+	isc_tlsctx_free(&cache->ctx);
+	isc_mem_putanddetach(&cache->mctx, cache, sizeof(*cache));
+}
+
+static bool
+ssl_session_seems_resumable(const SSL_SESSION *sess) {
+#ifdef HAVE_SSL_SESSION_IS_RESUMABLE
+	/*
+	 * If SSL_SESSION_is_resumable() is available, let's use that. It
+	 * is expected to be available on OpenSSL >= 1.1.1 and its modern
+	 * siblings.
+	 */
+	return (SSL_SESSION_is_resumable(sess) != 0);
+#elif (OPENSSL_VERSION_NUMBER >= 0x10100000L)
+	/*
+	 * Taking into consideration that OpenSSL 1.1.0 uses opaque
+	 * pointers for SSL_SESSION, we cannot implement a replacement for
+	 * SSL_SESSION_is_resumable() manually. Let's use a sensible
+	 * approximation for that, then: if there is an associated session
+	 * ticket or session ID, then, most likely, the session is
+	 * resumable.
+	 */
+	unsigned int session_id_len = 0;
+	(void)SSL_SESSION_get_id(sess, &session_id_len);
+	return (SSL_SESSION_has_ticket(sess) || session_id_len > 0);
+#else
+	return (!sess->not_resumable &&
+		(sess->session_id_length > 0 || sess->tlsext_ticklen > 0));
+#endif
+}
+
+void
+isc_tlsctx_client_session_cache_keep(isc_tlsctx_client_session_cache_t *cache,
+				     char *remote_peer_name, isc_tls_t *tls) {
+	size_t name_len;
+	isc_result_t result;
+	SSL_SESSION *sess;
+	client_session_cache_bucket_t *restrict bucket = NULL;
+	client_session_cache_entry_t *restrict entry = NULL;
+
+	REQUIRE(VALID_TLSCTX_CLIENT_SESSION_CACHE(cache));
+	REQUIRE(remote_peer_name != NULL && *remote_peer_name != '\0');
+	REQUIRE(tls != NULL);
+
+	sess = SSL_get1_session(tls);
+	if (sess == NULL) {
+		return;
+	} else if (!ssl_session_seems_resumable(sess)) {
+		SSL_SESSION_free(sess);
+		return;
+	}
+
+	isc_mutex_lock(&cache->lock);
+
+	name_len = strlen(remote_peer_name);
+	result = isc_ht_find(cache->buckets, (const uint8_t *)remote_peer_name,
+			     name_len, (void **)&bucket);
+
+	if (result != ISC_R_SUCCESS) {
+		/* Let's create a new bucket */
+		INSIST(bucket == NULL);
+		bucket = isc_mem_get(cache->mctx, sizeof(*bucket));
+		*bucket = (client_session_cache_bucket_t){
+			.bucket_key = isc_mem_strdup(cache->mctx,
+						     remote_peer_name),
+			.bucket_key_len = name_len
+		};
+		ISC_LIST_INIT(bucket->entries);
+		RUNTIME_CHECK(isc_ht_add(cache->buckets,
+					 (const uint8_t *)remote_peer_name,
+					 name_len,
+					 (void *)bucket) == ISC_R_SUCCESS);
+	}
+
+	/* Let's add a new cache entry to the new/found bucket */
+	entry = isc_mem_get(cache->mctx, sizeof(*entry));
+	*entry = (client_session_cache_entry_t){ .session = sess,
+						 .bucket = bucket };
+	ISC_LINK_INIT(entry, bucket_link);
+	ISC_LINK_INIT(entry, cache_link);
+
+	ISC_LIST_APPEND(bucket->entries, entry, bucket_link);
+
+	ISC_LIST_APPEND(cache->lru_entries, entry, cache_link);
+	cache->nentries++;
+
+	if (cache->nentries > cache->max_entries) {
+		/*
+		 * Cache overrun. We need to remove the oldest entry from the
+		 * cache
+		 */
+		client_session_cache_entry_t *restrict oldest;
+		INSIST((cache->nentries - 1) == cache->max_entries);
+
+		oldest = ISC_LIST_HEAD(cache->lru_entries);
+		client_cache_entry_delete(cache, oldest);
+	}
+
+	isc_mutex_unlock(&cache->lock);
+}
+
+void
+isc_tlsctx_client_session_cache_reuse(isc_tlsctx_client_session_cache_t *cache,
+				      char *remote_peer_name, isc_tls_t *tls) {
+	client_session_cache_bucket_t *restrict bucket = NULL;
+	client_session_cache_entry_t *restrict entry;
+	size_t name_len;
+	isc_result_t result;
+
+	REQUIRE(VALID_TLSCTX_CLIENT_SESSION_CACHE(cache));
+	REQUIRE(remote_peer_name != NULL && *remote_peer_name != '\0');
+	REQUIRE(tls != NULL);
+
+	isc_mutex_lock(&cache->lock);
+
+	/* Let's find the bucket */
+	name_len = strlen(remote_peer_name);
+	result = isc_ht_find(cache->buckets, (const uint8_t *)remote_peer_name,
+			     name_len, (void **)&bucket);
+
+	if (result != ISC_R_SUCCESS) {
+		goto exit;
+	}
+
+	INSIST(bucket != NULL);
+
+	/*
+	 * If the bucket has been found, let's use the newest session from
+	 * the bucket, as it has the highest chance to be successfully
+	 * resumed.
+	 */
+	INSIST(!ISC_LIST_EMPTY(bucket->entries));
+	entry = ISC_LIST_TAIL(bucket->entries);
+	RUNTIME_CHECK(SSL_set_session(tls, entry->session) == 1);
+	client_cache_entry_delete(cache, entry);
+
+exit:
+	isc_mutex_unlock(&cache->lock);
+}
+
+void
+isc_tlsctx_client_session_cache_keep_sockaddr(
+	isc_tlsctx_client_session_cache_t *cache, isc_sockaddr_t *remote_peer,
+	isc_tls_t *tls) {
+	char peername[ISC_SOCKADDR_FORMATSIZE] = { 0 };
+
+	REQUIRE(remote_peer != NULL);
+
+	isc_sockaddr_format(remote_peer, peername, sizeof(peername));
+
+	isc_tlsctx_client_session_cache_keep(cache, peername, tls);
+}
+
+void
+isc_tlsctx_client_session_cache_reuse_sockaddr(
+	isc_tlsctx_client_session_cache_t *cache, isc_sockaddr_t *remote_peer,
+	isc_tls_t *tls) {
+	char peername[ISC_SOCKADDR_FORMATSIZE] = { 0 };
+
+	REQUIRE(remote_peer != NULL);
+
+	isc_sockaddr_format(remote_peer, peername, sizeof(peername));
+
+	isc_tlsctx_client_session_cache_reuse(cache, peername, tls);
+}
+
+const isc_tlsctx_t *
+isc_tlsctx_client_session_cache_getctx(
+	isc_tlsctx_client_session_cache_t *cache) {
+	REQUIRE(VALID_TLSCTX_CLIENT_SESSION_CACHE(cache));
+	return (cache->ctx);
+}
+
+void
+isc_tlsctx_set_random_session_id_context(isc_tlsctx_t *ctx) {
+	uint8_t session_id_ctx[SSL_MAX_SID_CTX_LENGTH] = { 0 };
+	const size_t len = ISC_MIN(20, sizeof(session_id_ctx));
+
+	REQUIRE(ctx != NULL);
+
+	RUNTIME_CHECK(RAND_bytes(session_id_ctx, len) == 1);
+
+	RUNTIME_CHECK(
+		SSL_CTX_set_session_id_context(ctx, session_id_ctx, len) == 1);
 }

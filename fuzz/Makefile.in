@@ -94,20 +94,22 @@ target_triplet = @target@
 @HOST_MACOS_TRUE@am__append_1 = \
 @HOST_MACOS_TRUE@	-Wl,-flat_namespace
 
-check_PROGRAMS = dns_master_load$(EXEEXT) dns_message_parse$(EXEEXT) \
+check_PROGRAMS = dns_master_load$(EXEEXT) \
+	dns_message_checksig$(EXEEXT) dns_message_parse$(EXEEXT) \
 	dns_name_fromtext_target$(EXEEXT) dns_rdata_fromtext$(EXEEXT) \
 	dns_rdata_fromwire_text$(EXEEXT) \
 	isc_lex_getmastertoken$(EXEEXT) isc_lex_gettoken$(EXEEXT)
 subdir = fuzz
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
-am__aclocal_m4_deps = $(top_srcdir)/m4/ax_cc_for_build.m4 \
-	$(top_srcdir)/m4/ax_check_compile_flag.m4 \
+am__aclocal_m4_deps = $(top_srcdir)/m4/ax_check_compile_flag.m4 \
+	$(top_srcdir)/m4/ax_check_link_flag.m4 \
 	$(top_srcdir)/m4/ax_check_openssl.m4 \
 	$(top_srcdir)/m4/ax_gcc_func_attribute.m4 \
 	$(top_srcdir)/m4/ax_jemalloc.m4 \
 	$(top_srcdir)/m4/ax_lib_lmdb.m4 \
 	$(top_srcdir)/m4/ax_perl_module.m4 \
 	$(top_srcdir)/m4/ax_posix_shell.m4 \
+	$(top_srcdir)/m4/ax_prog_cc_for_build.m4 \
 	$(top_srcdir)/m4/ax_pthread.m4 \
 	$(top_srcdir)/m4/ax_python_module.m4 \
 	$(top_srcdir)/m4/ax_restore_flags.m4 \
@@ -133,6 +135,11 @@ dns_master_load_SOURCES = dns_master_load.c
 dns_master_load_OBJECTS = dns_master_load.$(OBJEXT)
 dns_master_load_LDADD = $(LDADD)
 dns_master_load_DEPENDENCIES = libfuzzmain.la $(LIBISC_LIBS) \
+	$(LIBDNS_LIBS)
+dns_message_checksig_SOURCES = dns_message_checksig.c
+dns_message_checksig_OBJECTS = dns_message_checksig.$(OBJEXT)
+dns_message_checksig_LDADD = $(LDADD)
+dns_message_checksig_DEPENDENCIES = libfuzzmain.la $(LIBISC_LIBS) \
 	$(LIBDNS_LIBS)
 dns_message_parse_SOURCES = dns_message_parse.c
 dns_message_parse_OBJECTS = dns_message_parse.$(OBJEXT)
@@ -180,6 +187,7 @@ DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/dns_master_load.Po \
+	./$(DEPDIR)/dns_message_checksig.Po \
 	./$(DEPDIR)/dns_message_parse.Po \
 	./$(DEPDIR)/dns_name_fromtext_target.Po \
 	./$(DEPDIR)/dns_rdata_fromtext.Po \
@@ -206,13 +214,15 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libfuzzmain_la_SOURCES) dns_master_load.c \
-	dns_message_parse.c dns_name_fromtext_target.c \
-	dns_rdata_fromtext.c dns_rdata_fromwire_text.c \
-	isc_lex_getmastertoken.c isc_lex_gettoken.c
+	dns_message_checksig.c dns_message_parse.c \
+	dns_name_fromtext_target.c dns_rdata_fromtext.c \
+	dns_rdata_fromwire_text.c isc_lex_getmastertoken.c \
+	isc_lex_gettoken.c
 DIST_SOURCES = $(libfuzzmain_la_SOURCES) dns_master_load.c \
-	dns_message_parse.c dns_name_fromtext_target.c \
-	dns_rdata_fromtext.c dns_rdata_fromwire_text.c \
-	isc_lex_getmastertoken.c isc_lex_gettoken.c
+	dns_message_checksig.c dns_message_parse.c \
+	dns_name_fromtext_target.c dns_rdata_fromtext.c \
+	dns_rdata_fromwire_text.c isc_lex_getmastertoken.c \
+	isc_lex_gettoken.c
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -455,14 +465,19 @@ AUTOCONF = @AUTOCONF@
 AUTOHEADER = @AUTOHEADER@
 AUTOMAKE = @AUTOMAKE@
 AWK = @AWK@
+BUILD_EXEEXT = @BUILD_EXEEXT@
+BUILD_OBJEXT = @BUILD_OBJEXT@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CC_FOR_BUILD = @CC_FOR_BUILD@
 CFLAGS = @CFLAGS@
+CFLAGS_FOR_BUILD = @CFLAGS_FOR_BUILD@
 CMOCKA_CFLAGS = @CMOCKA_CFLAGS@
 CMOCKA_LIBS = @CMOCKA_LIBS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CPPFLAGS_FOR_BUILD = @CPPFLAGS_FOR_BUILD@
+CPP_FOR_BUILD = @CPP_FOR_BUILD@
 CURL = @CURL@
 CYGPATH_W = @CYGPATH_W@
 DEFS = @DEFS@
@@ -479,7 +494,6 @@ ECHO_N = @ECHO_N@
 ECHO_T = @ECHO_T@
 EGREP = @EGREP@
 EXEEXT = @EXEEXT@
-EXEEXT_FOR_BUILD = @EXEEXT_FOR_BUILD@
 FGREP = @FGREP@
 FSTRM_CAPTURE = @FSTRM_CAPTURE@
 FUZZ_LDFLAGS = @FUZZ_LDFLAGS@
@@ -502,6 +516,7 @@ KRB5_LIBS = @KRB5_LIBS@
 LATEXMK = @LATEXMK@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
+LDFLAGS_FOR_BUILD = @LDFLAGS_FOR_BUILD@
 LIBCAP_LIBS = @LIBCAP_LIBS@
 LIBIDN2_CFLAGS = @LIBIDN2_CFLAGS@
 LIBIDN2_LIBS = @LIBIDN2_LIBS@
@@ -570,7 +585,9 @@ SHELL = @SHELL@
 SPHINX_BUILD = @SPHINX_BUILD@
 STD_CFLAGS = @STD_CFLAGS@
 STD_CPPFLAGS = @STD_CPPFLAGS@
+STD_LDFLAGS = @STD_LDFLAGS@
 STRIP = @STRIP@
+TEST_CFLAGS = @TEST_CFLAGS@
 VERSION = @VERSION@
 XELATEX = @XELATEX@
 XSLTPROC = @XSLTPROC@
@@ -582,6 +599,7 @@ abs_top_builddir = @abs_top_builddir@
 abs_top_srcdir = @abs_top_srcdir@
 ac_ct_AR = @ac_ct_AR@
 ac_ct_CC = @ac_ct_CC@
+ac_ct_CC_FOR_BUILD = @ac_ct_CC_FOR_BUILD@
 ac_ct_DUMPBIN = @ac_ct_DUMPBIN@
 am__include = @am__include@
 am__leading_dot = @am__leading_dot@
@@ -639,13 +657,11 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 ACLOCAL_AMFLAGS = -I $(top_srcdir)/m4
-AM_CFLAGS = \
-	$(STD_CFLAGS)
-
+AM_CFLAGS = $(STD_CFLAGS) $(TEST_CFLAGS)
 AM_CPPFLAGS = $(STD_CPPFLAGS) -include $(top_builddir)/config.h \
 	-I$(srcdir)/include $(LIBISC_CFLAGS) $(LIBDNS_CFLAGS) \
 	-DFUZZDIR=\"$(abs_srcdir)\"
-AM_LDFLAGS = $(am__append_1) $(FUZZ_LDFLAGS)
+AM_LDFLAGS = $(STD_LDFLAGS) $(am__append_1) $(FUZZ_LDFLAGS)
 LDADD = libfuzzmain.la $(LIBISC_LIBS) $(LIBDNS_LIBS)
 LIBISC_CFLAGS = \
 	-I$(top_srcdir)/include				\
@@ -697,6 +713,7 @@ libfuzzmain_la_SOURCES = \
 
 EXTRA_DIST = \
 	dns_master_load.in		\
+	dns_message_checksig.in		\
 	dns_message_parse.in		\
 	dns_name_fromtext_target.in	\
 	dns_rdata_fromtext.in		\
@@ -769,6 +786,10 @@ dns_master_load$(EXEEXT): $(dns_master_load_OBJECTS) $(dns_master_load_DEPENDENC
 	@rm -f dns_master_load$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(dns_master_load_OBJECTS) $(dns_master_load_LDADD) $(LIBS)
 
+dns_message_checksig$(EXEEXT): $(dns_message_checksig_OBJECTS) $(dns_message_checksig_DEPENDENCIES) $(EXTRA_dns_message_checksig_DEPENDENCIES) 
+	@rm -f dns_message_checksig$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(dns_message_checksig_OBJECTS) $(dns_message_checksig_LDADD) $(LIBS)
+
 dns_message_parse$(EXEEXT): $(dns_message_parse_OBJECTS) $(dns_message_parse_DEPENDENCIES) $(EXTRA_dns_message_parse_DEPENDENCIES) 
 	@rm -f dns_message_parse$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(dns_message_parse_OBJECTS) $(dns_message_parse_LDADD) $(LIBS)
@@ -800,6 +821,7 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_master_load.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_message_checksig.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_message_parse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_name_fromtext_target.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns_rdata_fromtext.Po@am__quote@ # am--include-marker
@@ -1047,6 +1069,13 @@ dns_master_load.log: dns_master_load$(EXEEXT)
 	--log-file $$b.log --trs-file $$b.trs \
 	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
 	"$$tst" $(AM_TESTS_FD_REDIRECT)
+dns_message_checksig.log: dns_message_checksig$(EXEEXT)
+	@p='dns_message_checksig$(EXEEXT)'; \
+	b='dns_message_checksig'; \
+	$(am__check_pre) $(LOG_DRIVER) --test-name "$$f" \
+	--log-file $$b.log --trs-file $$b.trs \
+	$(am__common_driver_flags) $(AM_LOG_DRIVER_FLAGS) $(LOG_DRIVER_FLAGS) -- $(LOG_COMPILE) \
+	"$$tst" $(AM_TESTS_FD_REDIRECT)
 dns_message_parse.log: dns_message_parse$(EXEEXT)
 	@p='dns_message_parse$(EXEEXT)'; \
 	b='dns_message_parse'; \
@@ -1183,6 +1212,7 @@ clean-am: clean-checkLTLIBRARIES clean-checkPROGRAMS clean-generic \
 
 distclean: distclean-am
 		-rm -f ./$(DEPDIR)/dns_master_load.Po
+	-rm -f ./$(DEPDIR)/dns_message_checksig.Po
 	-rm -f ./$(DEPDIR)/dns_message_parse.Po
 	-rm -f ./$(DEPDIR)/dns_name_fromtext_target.Po
 	-rm -f ./$(DEPDIR)/dns_rdata_fromtext.Po
@@ -1240,6 +1270,7 @@ installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 		-rm -f ./$(DEPDIR)/dns_master_load.Po
+	-rm -f ./$(DEPDIR)/dns_message_checksig.Po
 	-rm -f ./$(DEPDIR)/dns_message_parse.Po
 	-rm -f ./$(DEPDIR)/dns_name_fromtext_target.Po
 	-rm -f ./$(DEPDIR)/dns_rdata_fromtext.Po

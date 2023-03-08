@@ -256,7 +256,7 @@ dns_sdb_unregister(dns_sdbimplementation_t **sdbimp) {
 	isc_mem_putanddetach(&imp->mctx, imp, sizeof(dns_sdbimplementation_t));
 }
 
-static inline unsigned int
+static unsigned int
 initial_size(unsigned int len) {
 	unsigned int size;
 
@@ -451,7 +451,8 @@ getnode(dns_sdballnodes_t *allnodes, const char *name, dns_sdbnode_t **nodep) {
 		dns_name_dup(newname, mctx, sdbnode->name);
 		ISC_LIST_PREPEND(allnodes->nodelist, sdbnode, link);
 		if (allnodes->origin == NULL &&
-		    dns_name_equal(newname, &sdb->common.origin)) {
+		    dns_name_equal(newname, &sdb->common.origin))
+		{
 			allnodes->origin = sdbnode;
 		}
 	}
@@ -940,7 +941,8 @@ findext(dns_db_t *db, const dns_name_t *name, dns_dbversion_t *version,
 					dns_rdataset_disassociate(rdataset);
 					if (sigrdataset != NULL &&
 					    dns_rdataset_isassociated(
-						    sigrdataset)) {
+						    sigrdataset))
+					{
 						dns_rdataset_disassociate(
 							sigrdataset);
 					}
@@ -1069,8 +1071,7 @@ expirenode(dns_db_t *db, dns_dbnode_t *node, isc_stdtime_t now) {
 	UNUSED(db);
 	UNUSED(node);
 	UNUSED(now);
-	INSIST(0);
-	ISC_UNREACHABLE();
+	UNREACHABLE();
 }
 
 static void
@@ -1096,7 +1097,8 @@ createiterator(dns_db_t *db, unsigned int options,
 	}
 
 	if ((options & DNS_DB_NSEC3ONLY) != 0 ||
-	    (options & DNS_DB_NONSEC3) != 0) {
+	    (options & DNS_DB_NONSEC3) != 0)
+	{
 		return (ISC_R_NOTIMPLEMENTED);
 	}
 
@@ -1167,7 +1169,8 @@ findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 
 static isc_result_t
 allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
-	     isc_stdtime_t now, dns_rdatasetiter_t **iteratorp) {
+	     unsigned int options, isc_stdtime_t now,
+	     dns_rdatasetiter_t **iteratorp) {
 	sdb_rdatasetiter_t *iterator;
 
 	REQUIRE(version == NULL || version == &dummy);
@@ -1183,6 +1186,7 @@ allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 	iterator->common.node = NULL;
 	attachnode(db, node, &iterator->common.node);
 	iterator->common.version = version;
+	iterator->common.options = options;
 	iterator->common.now = now;
 
 	*iteratorp = (dns_rdatasetiter_t *)iterator;

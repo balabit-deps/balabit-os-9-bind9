@@ -751,7 +751,7 @@ do
 	echo_i "Skipping XML statistics checks"
    fi
 
-   if [ ${HAVEJSONSTATS} ] && [ -x "${CURL}" ] ; then
+   if $FEATURETEST --have-json-c && [ -x "${CURL}" ] ; then
 	echo_i "getting JSON statisistcs for (synth-from-dnssec ${description};) ($n)"
 	ret=0
 	json=json.out$n
@@ -846,6 +846,54 @@ ret=0
 dig_with_opts dnamed.example. ns @10.53.0.5 > dig.out.ns5.test$n || ret=1
 dig_with_opts a.dnamed.example. a @10.53.0.5 > dig.out.ns5-1.test$n || ret=1
 check_status NOERROR dig.out.ns5-1.test$n || ret=1
+n=$((n+1))
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status+ret))
+
+echo_i "regression test for CVE-2022-0635 ($n)"
+ret=0
+# add DNAME to cache
+dig_with_opts dname.dnamed. dname @10.53.0.5 > dig.out.ns5-1.test$n || ret=1
+grep "status: NOERROR" dig.out.ns5-1.test$n >/dev/null || ret=1
+# add A record to cache at name before DNAME owner
+dig_with_opts a.dnamed. a @10.53.0.5 > dig.out.ns5-2.test$n || ret=1
+grep "status: NOERROR" dig.out.ns5-2.test$n >/dev/null || ret=1
+# add NSEC record to cache at name before DNAME owner
+dig_with_opts a.dnamed. aaaa @10.53.0.5 > dig.out.ns5-3.test$n || ret=1
+grep "status: NOERROR" dig.out.ns5-3.test$n >/dev/null || ret=1
+# wait for NSEC to timeout
+sleep 6
+# use DNAME for lookup
+dig_with_opts b.dname.dnamed a @10.53.0.5 > dig.out.ns5-4.test$n || ret=1
+grep "status: NXDOMAIN" dig.out.ns5-4.test$n >/dev/null || ret=1
+n=$((n+1))
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status+ret))
+
+echo_i "check synth-from-dnssec with grafted zone (forward only) ($n)"
+ret=0
+#prime cache with NXDOMAIN NSEC covering 'fun' to 'minimal'
+dig_with_opts internal @10.53.0.5 > dig.out.ns5-1.test$n || ret=1
+grep "status: NXDOMAIN" dig.out.ns5-1.test$n >/dev/null || ret=1
+grep '^fun\..*NSEC.minimal\. ' dig.out.ns5-1.test$n >/dev/null || ret=1
+#perform lookup in grafted zone
+dig_with_opts example.internal @10.53.0.5 > dig.out.ns5-2.test$n || ret=1
+grep "status: NOERROR" dig.out.ns5-2.test$n >/dev/null || ret=1
+grep '^example\.internal\..*A.1.2.3.4$' dig.out.ns5-2.test$n >/dev/null || ret=1
+n=$((n+1))
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status+ret))
+
+echo_i "check synth-from-dnssec with grafted zone (primary zone) ($n)"
+ret=0
+#prime cache with NXDOMAIN NSEC covering 'fun' to 'minimal'
+dig_with_opts internal @10.53.0.5 > dig.out.ns5-1.test$n || ret=1
+grep "status: NXDOMAIN" dig.out.ns5-1.test$n >/dev/null || ret=1
+grep '^fun\..*NSEC.minimal\. ' dig.out.ns5-1.test$n >/dev/null || ret=1
+#perform lookup in grafted zone
+dig_with_opts example.internal2 @10.53.0.5 > dig.out.ns5-2.test$n || ret=1
+grep "status: NOERROR" dig.out.ns5-2.test$n >/dev/null || ret=1
+grep '^example\.internal2\..*A.1.2.3.4$' dig.out.ns5-2.test$n >/dev/null || ret=1
 n=$((n+1))
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status+ret))

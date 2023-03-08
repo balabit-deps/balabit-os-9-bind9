@@ -245,7 +245,8 @@ isc_netaddr_prefixok(const isc_netaddr_t *na, unsigned int prefixlen) {
 		nbytes++;
 	}
 	if (nbytes < ipbytes &&
-	    memcmp(p + nbytes, zeros, ipbytes - nbytes) != 0) {
+	    memcmp(p + nbytes, zeros, ipbytes - nbytes) != 0)
+	{
 		return (ISC_R_FAILURE);
 	}
 	return (ISC_R_SUCCESS);
@@ -352,8 +353,7 @@ isc_netaddr_fromsockaddr(isc_netaddr_t *t, const isc_sockaddr_t *s) {
 		t->zone = 0;
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 }
 

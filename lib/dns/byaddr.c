@@ -108,7 +108,7 @@ struct dns_byaddr {
 
 #define MAX_RESTARTS 16
 
-static inline isc_result_t
+static isc_result_t
 copy_ptr_targets(dns_byaddr_t *byaddr, dns_rdataset_t *rdataset) {
 	isc_result_t result;
 	dns_name_t *name;
@@ -176,7 +176,8 @@ bevent_destroy(isc_event_t *event) {
 	bevent = (dns_byaddrevent_t *)event;
 
 	for (name = ISC_LIST_HEAD(bevent->names); name != NULL;
-	     name = next_name) {
+	     name = next_name)
+	{
 		next_name = ISC_LIST_NEXT(name, link);
 		ISC_LIST_UNLINK(bevent->names, name, link);
 		dns_name_free(name, mctx);

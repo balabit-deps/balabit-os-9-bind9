@@ -75,7 +75,7 @@ dns_ssutable_create(isc_mem_t *mctx, dns_ssutable_t **tablep) {
 	*tablep = table;
 }
 
-static inline void
+static void
 destroy(dns_ssutable_t *table) {
 	isc_mem_t *mctx;
 
@@ -180,7 +180,7 @@ dns_ssutable_addrule(dns_ssutable_t *table, bool grant,
 	ISC_LIST_INITANDAPPEND(table->rules, rule, link);
 }
 
-static inline bool
+static bool
 isusertype(dns_rdatatype_t type) {
 	return (type != dns_rdatatype_ns && type != dns_rdatatype_soa &&
 		type != dns_rdatatype_rrsig);
@@ -227,8 +227,7 @@ reverse_from_address(dns_name_t *tcpself, const isc_netaddr_t *tcpaddr) {
 		RUNTIME_CHECK(result < sizeof(buf));
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	isc_buffer_init(&b, buf, strlen(buf));
 	isc_buffer_add(&b, strlen(buf));
@@ -269,8 +268,7 @@ stf_from_address(dns_name_t *stfself, const isc_netaddr_t *tcpaddr) {
 		RUNTIME_CHECK(result < sizeof(buf));
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	isc_buffer_init(&b, buf, strlen(buf));
 	isc_buffer_add(&b, strlen(buf));
@@ -281,7 +279,7 @@ stf_from_address(dns_name_t *stfself, const isc_netaddr_t *tcpaddr) {
 bool
 dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			const dns_name_t *name, const isc_netaddr_t *addr,
-			bool tcp, const dns_aclenv_t *env, dns_rdatatype_t type,
+			bool tcp, dns_aclenv_t *env, dns_rdatatype_t type,
 			const dns_name_t *target, const dst_key_t *key,
 			const dns_ssurule_t **rulep) {
 	dns_fixedname_t fixed;
@@ -319,7 +317,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			}
 			if (dns_name_iswildcard(rule->identity)) {
 				if (!dns_name_matcheswildcard(signer,
-							      rule->identity)) {
+							      rule->identity))
+				{
 					continue;
 				}
 			} else {
@@ -369,8 +368,10 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			if (!dns_name_issubdomain(name, rule->name)) {
 				continue;
 			}
+			RWLOCK(&env->rwlock, isc_rwlocktype_read);
 			dns_acl_match(addr, NULL, env->localhost, NULL, &match,
 				      NULL);
+			RWUNLOCK(&env->rwlock, isc_rwlocktype_read);
 			if (match == 0) {
 				if (signer != NULL) {
 					isc_log_write(dns_lctx,
@@ -413,25 +414,29 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			break;
 		case dns_ssumatchtype_selfkrb5:
 			if (dst_gssapi_identitymatchesrealmkrb5(
-				    signer, name, rule->identity, false)) {
+				    signer, name, rule->identity, false))
+			{
 				break;
 			}
 			continue;
 		case dns_ssumatchtype_selfms:
 			if (dst_gssapi_identitymatchesrealmms(
-				    signer, name, rule->identity, false)) {
+				    signer, name, rule->identity, false))
+			{
 				break;
 			}
 			continue;
 		case dns_ssumatchtype_selfsubkrb5:
 			if (dst_gssapi_identitymatchesrealmkrb5(
-				    signer, name, rule->identity, true)) {
+				    signer, name, rule->identity, true))
+			{
 				break;
 			}
 			continue;
 		case dns_ssumatchtype_selfsubms:
 			if (dst_gssapi_identitymatchesrealmms(
-				    signer, name, rule->identity, true)) {
+				    signer, name, rule->identity, true))
+			{
 				break;
 			}
 			continue;
@@ -454,7 +459,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 				break;
 			}
 			if (dst_gssapi_identitymatchesrealmkrb5(
-				    signer, tname, rule->identity, false)) {
+				    signer, tname, rule->identity, false))
+			{
 				break;
 			}
 			continue;
@@ -477,7 +483,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 				break;
 			}
 			if (dst_gssapi_identitymatchesrealmms(
-				    signer, tname, rule->identity, false)) {
+				    signer, tname, rule->identity, false))
+			{
 				break;
 			}
 			continue;
@@ -486,7 +493,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			reverse_from_address(tcpself, addr);
 			if (dns_name_iswildcard(rule->identity)) {
 				if (!dns_name_matcheswildcard(tcpself,
-							      rule->identity)) {
+							      rule->identity))
+				{
 					continue;
 				}
 			} else {
@@ -503,7 +511,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			stf_from_address(stfself, addr);
 			if (dns_name_iswildcard(rule->identity)) {
 				if (!dns_name_matcheswildcard(stfself,
-							      rule->identity)) {
+							      rule->identity))
+				{
 					continue;
 				}
 			} else {
@@ -525,7 +534,8 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			break;
 		case dns_ssumatchtype_dlz:
 			if (!dns_dlz_ssumatch(table->dlzdatabase, signer, name,
-					      addr, type, key)) {
+					      addr, type, key))
+			{
 				continue;
 			}
 			break;
@@ -537,13 +547,15 @@ dns_ssutable_checkrules(dns_ssutable_t *table, const dns_name_t *signer,
 			 * checks will have already checked the type.
 			 */
 			if (rule->matchtype != dns_ssumatchtype_dlz &&
-			    !isusertype(type)) {
+			    !isusertype(type))
+			{
 				continue;
 			}
 		} else {
 			for (i = 0; i < rule->ntypes; i++) {
 				if (rule->types[i].type == dns_rdatatype_any ||
-				    rule->types[i].type == type) {
+				    rule->types[i].type == type)
+				{
 					break;
 				}
 			}

@@ -518,6 +518,12 @@ ret=0
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
+echo_i "checking whether destination UDP port is logged for client queries"
+ret=0
+$DNSTAPREAD ns3/dnstap.out.save | grep -Eq "CQ [0-9:.]+ -> 10.53.0.3:${PORT} UDP" || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=`expr $status + $ret`
+
 HAS_PYYAML=0
 if [ -x "$PYTHON" ] ; then
 	$PYTHON -c "import yaml" 2> /dev/null && HAS_PYYAML=1
@@ -791,14 +797,14 @@ test_dnstap_roll() (
 
 echo_i "checking 'rndc -roll <value>' (no versions)"
 ret=0
-start_server --noclean --restart --port "${PORT}" dnstap ns3
+start_server --noclean --restart --port "${PORT}" ns3
 _repeat 5 test_dnstap_roll 10.53.0.3 ns3 3 || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status+ret))
 
 echo_i "checking 'rndc -roll <value>' (versions)"
 ret=0
-start_server --noclean --restart --port "${PORT}" dnstap ns2
+start_server --noclean --restart --port "${PORT}" ns2
 _repeat 5 test_dnstap_roll 10.53.0.2 ns2 3 || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status+ret))

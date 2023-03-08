@@ -13,11 +13,20 @@
 
 #pragma once
 
+#include <unistd.h>
+
 #include <isc/mem.h>
 #include <isc/region.h>
 #include <isc/result.h>
 #include <isc/tls.h>
 #include <isc/types.h>
+
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#if defined(SO_REUSEPORT_LB) || (defined(SO_REUSEPORT) && defined(__linux__))
+#define HAVE_SO_REUSEPORT_LB 1
+#endif
 
 /*
  * Replacement for isc_sockettype_t provided by socket.h.
@@ -98,6 +107,37 @@ isc_nmsocket_close(isc_nmsocket_t **sockp);
  * created by isc_nm_listenudp(), isc_nm_listentcp(), or
  * isc_nm_listentcpdns(). Once there are no remaining child
  * sockets with active handles, the socket will be closed.
+ */
+
+void
+isc_nmsocket_set_tlsctx(isc_nmsocket_t *listener, isc_tlsctx_t *tlsctx);
+/*%<
+ * Asynchronously replace the TLS context within the listener socket object.
+ * The function is intended to be used during reconfiguration.
+ *
+ * Requires:
+ * \li	'listener' is a pointer to a valid network manager listener socket
+ object with TLS support;
+ * \li	'tlsctx' is a valid pointer to a TLS context object.
+ */
+
+void
+isc_nmsocket_set_max_streams(isc_nmsocket_t *listener,
+			     const uint32_t  max_streams);
+/*%<
+ * Set the maximum allowed number of concurrent streams for accepted
+ * client connections. The implementation might be asynchronous
+ * depending on the listener socket type.
+ *
+ * The call is a no-op for any listener socket type that does not
+ * support concept of multiple sessions per a client
+ * connection. Currently, it works only for HTTP/2 listeners.
+ *
+ * Setting 'max_streams' to '0' instructs the listener that there is
+ * no limit for concurrent streams.
+ *
+ * Requires:
+ * \li	'listener' is a pointer to a valid network manager listener socket.
  */
 
 #ifdef NETMGR_TRACE
@@ -437,6 +477,17 @@ isc_nm_setnetbuffers(isc_nm_t *mgr, int32_t recv_tcp, int32_t send_tcp,
  * \li	'mgr' is a valid netmgr.
  */
 
+bool
+isc_nm_getloadbalancesockets(isc_nm_t *mgr);
+void
+isc_nm_setloadbalancesockets(isc_nm_t *mgr, bool enabled);
+/*%<
+ * Get and set value of load balancing of the sockets.
+ *
+ * Requires:
+ * \li	'mgr' is a valid netmgr.
+ */
+
 void
 isc_nm_gettimeouts(isc_nm_t *mgr, uint32_t *initial, uint32_t *idle,
 		   uint32_t *keepalive, uint32_t *advertised);
@@ -487,7 +538,8 @@ isc_nm_tcpdnsconnect(isc_nm_t *mgr, isc_sockaddr_t *local, isc_sockaddr_t *peer,
 void
 isc_nm_tlsdnsconnect(isc_nm_t *mgr, isc_sockaddr_t *local, isc_sockaddr_t *peer,
 		     isc_nm_cb_t cb, void *cbarg, unsigned int timeout,
-		     size_t extrahandlesize, isc_tlsctx_t *sslctx);
+		     size_t extrahandlesize, isc_tlsctx_t *sslctx,
+		     isc_tlsctx_client_session_cache_t *client_sess_cache);
 /*%<
  * Establish a DNS client connection via a TCP or TLS connection, bound to
  * the address 'local' and connected to the address 'peer'.
@@ -527,13 +579,15 @@ isc_nm_listentls(isc_nm_t *mgr, isc_sockaddr_t *iface,
 void
 isc_nm_tlsconnect(isc_nm_t *mgr, isc_sockaddr_t *local, isc_sockaddr_t *peer,
 		  isc_nm_cb_t cb, void *cbarg, isc_tlsctx_t *ctx,
+		  isc_tlsctx_client_session_cache_t *client_sess_cache,
 		  unsigned int timeout, size_t extrahandlesize);
 
 void
 isc_nm_httpconnect(isc_nm_t *mgr, isc_sockaddr_t *local, isc_sockaddr_t *peer,
 		   const char *uri, bool POST, isc_nm_cb_t cb, void *cbarg,
-		   isc_tlsctx_t *ctx, unsigned int timeout,
-		   size_t extrahandlesize);
+		   isc_tlsctx_t			     *ctx,
+		   isc_tlsctx_client_session_cache_t *client_sess_cache,
+		   unsigned int timeout, size_t extrahandlesize);
 
 isc_result_t
 isc_nm_listenhttp(isc_nm_t *mgr, isc_sockaddr_t *iface, int backlog,
@@ -610,6 +664,20 @@ isc_nm_http_makeuri(const bool https, const isc_sockaddr_t *sa,
  * \li 'outbuf' is a valid pointer to a buffer which will get the result;
  * \li 'outbuf_len' is a size of the result buffer and is greater than zero.
  */
+
+void
+isc_nm_http_set_endpoints(isc_nmsocket_t	  *listener,
+			  isc_nm_http_endpoints_t *eps);
+/*%<
+ * Asynchronously replace the set of HTTP endpoints (paths) within
+ * the listener socket object.  The function is intended to be used
+ * during reconfiguration.
+ *
+ * Requires:
+ * \li	'listener' is a pointer to a valid network manager HTTP listener socket;
+ * \li	'eps' is a valid pointer to an HTTP endpoints set.
+ */
+
 #endif /* HAVE_LIBNGHTTP2 */
 
 void
@@ -624,10 +692,16 @@ isc_nm_bad_request(isc_nmhandle_t *handle);
  *  \li 'handle' is a valid netmgr handle object.
  */
 
-bool
-isc_nm_xfr_allowed(isc_nmhandle_t *handle);
+isc_result_t
+isc_nm_xfr_checkperm(isc_nmhandle_t *handle);
 /*%<
- * Check if it is possible to do a zone transfer over the given handle.
+ * Check if it is permitted to do a zone transfer over the given handle.
+ *
+ * Returns:
+ * \li	#ISC_R_SUCCESS		Success, permission check passed successfully
+ * \li	#ISC_R_DOTALPNERROR	No permission because of ALPN tag mismatch
+ * \li	#ISC_R_NOPERM		No permission because of other restrictions
+ * \li  any other result indicates failure (i.e. no permission)
  *
  * Requires:
  * \li	'handle' is a valid connection handle.
@@ -660,6 +734,17 @@ bool
 isc_nm_has_encryption(const isc_nmhandle_t *handle);
 /*%<
  * Returns 'true' iff the handle's underlying transport does encryption.
+ *
+ * Requires:
+ *  \li 'handle' is a valid netmgr handle object.
+ */
+
+const char *
+isc_nm_verify_tls_peer_result_string(const isc_nmhandle_t *handle);
+/*%<
+ * Returns user-readable message describing TLS peer's certificate
+ * validation result. Returns 'NULL' for the transport handles for
+ * which peer verification was not performed.
  *
  * Requires:
  *  \li 'handle' is a valid netmgr handle object.

@@ -44,9 +44,9 @@
 #include <dlz_minimal.h>
 #include <dlz_pthread.h>
 
-#if !defined(LIBMARIADB) && MYSQL_VERSION_ID >= 80000
+#if !defined(MARIADB_BASE_VERSION) && MYSQL_VERSION_ID >= 80000
 typedef bool my_bool;
-#endif /* !defined(LIBMARIADB) && MYSQL_VERSION_ID >= 80000 */
+#endif /* !defined(MARIADB_BASE_VERSION) && MYSQL_VERSION_ID >= 80000 */
 
 #define dbc_search_limit 30
 #define ALLNODES	 1
@@ -97,8 +97,8 @@ b9_add_helper(mysql_instance_t *db, const char *helper_name, void *ptr);
  * Private methods
  */
 
-void
-mysql_destroy(dbinstance_t *db) {
+static void
+dlz_mysql_destroy(dbinstance_t *db) {
 	/* release DB connection */
 	if (db->dbconn != NULL) {
 		mysql_close((MYSQL *)db->dbconn);
@@ -114,7 +114,7 @@ mysql_destroy(dbinstance_t *db) {
  * multithreaded operation.
  */
 static void
-mysql_destroy_dblist(db_list_t *dblist) {
+dlz_mysql_destroy_dblist(db_list_t *dblist) {
 	dbinstance_t *ndbi = NULL;
 	dbinstance_t *dbi = NULL;
 
@@ -123,7 +123,7 @@ mysql_destroy_dblist(db_list_t *dblist) {
 		dbi = ndbi;
 		ndbi = DLZ_LIST_NEXT(dbi, link);
 
-		mysql_destroy(dbi);
+		dlz_mysql_destroy(dbi);
 	}
 
 	/* release memory for the list structure */
@@ -468,8 +468,9 @@ mysql_process_rs(mysql_instance_t *db, dns_sdlzlookup_t *lookup,
 			 * ones together.  figure out how long to make
 			 * string.
 			 */
-			for (j = 2; j < fields; j++)
+			for (j = 2; j < fields; j++) {
 				len += strlen(safeGet(row[j])) + 1;
+			}
 
 			/*
 			 * allocate string memory, allow for NULL to
@@ -668,8 +669,9 @@ dlz_allnodes(const char *zone, void *dbdata, dns_sdlzallnodes_t *allnodes) {
 			 * more than 4 fields, concatenate the last
 			 * ones together.
 			 */
-			for (j = 3; j < fields; j++)
+			for (j = 3; j < fields; j++) {
 				len += strlen(safeGet(row[j])) + 1;
+			}
 
 			tmpString = malloc(len + 1);
 			if (tmpString == NULL) {
@@ -1019,7 +1021,7 @@ dlz_destroy(void *dbdata) {
 
 	/* cleanup the list of DBI's */
 	if (db->db != NULL) {
-		mysql_destroy_dblist((db_list_t *)(db->db));
+		dlz_mysql_destroy_dblist((db_list_t *)(db->db));
 	}
 
 	if (db->dbname != NULL) {

@@ -56,9 +56,9 @@
 #include <dlz_minimal.h>
 #include <dlz_pthread.h>
 
-#if !defined(LIBMARIADB) && MYSQL_VERSION_ID >= 80000
+#if !defined(MARIADB_BASE_VERSION) && MYSQL_VERSION_ID >= 80000
 typedef bool my_bool;
-#endif /* !defined(LIBMARIADB) && MYSQL_VERSION_ID >= 80000 */
+#endif /* !defined(MARIADB_BASE_VERSION) && MYSQL_VERSION_ID >= 80000 */
 
 /*
  * The SQL queries that will be used for lookups and updates are defined
@@ -461,9 +461,8 @@ build_query(mysql_data_t *state, mysql_instance_t *dbi, const char *command,
 fail:
 	va_end(ap1);
 
-	for (item = DLZ_LIST_HEAD(arglist); item != NULL;
-	     item = DLZ_LIST_NEXT(item, link))
-	{
+	while ((item = DLZ_LIST_HEAD(arglist)) != NULL) {
+		DLZ_LIST_UNLINK(arglist, item, link);
 		if (item->arg != NULL) {
 			free(item->arg);
 		}
@@ -494,7 +493,7 @@ isrelative(const char *s) {
 }
 
 /* Return a dot if 's' doesn't already end with one */
-static inline const char *
+static const char *
 dot(const char *s) {
 	return (isrelative(s) ? "." : "");
 }
@@ -706,8 +705,9 @@ make_notify(const char *zone, int *packetlen) {
 	/* Make the question into labels */
 	j = 12;
 	while (packet[j]) {
-		for (i = j + 1; packet[i] != '\0' && packet[i] != '.'; i++)
+		for (i = j + 1; packet[i] != '\0' && packet[i] != '.'; i++) {
 			;
+		}
 		packet[j] = i - j - 1;
 		j = i;
 	}
@@ -1077,6 +1077,8 @@ dlz_destroy(void *dbdata) {
 isc_result_t
 dlz_findzonedb(void *dbdata, const char *name, dns_clientinfomethods_t *methods,
 	       dns_clientinfo_t *clientinfo) {
+	UNUSED(methods);
+	UNUSED(clientinfo);
 	isc_result_t result = ISC_R_SUCCESS;
 	mysql_data_t *state = (mysql_data_t *)dbdata;
 	MYSQL_RES *res;
@@ -1109,6 +1111,8 @@ isc_result_t
 dlz_lookup(const char *zone, const char *name, void *dbdata,
 	   dns_sdlzlookup_t *lookup, dns_clientinfomethods_t *methods,
 	   dns_clientinfo_t *clientinfo) {
+	UNUSED(methods);
+	UNUSED(clientinfo);
 	isc_result_t result;
 	mysql_data_t *state = (mysql_data_t *)dbdata;
 	bool found = false;

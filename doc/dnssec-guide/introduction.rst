@@ -27,9 +27,9 @@ be a part of his or her environment, and understand what it means to deploy it i
 field.
 
 This guide provides basic information on how to configure DNSSEC using
-BIND 9.16.0 or later. Most of the information and examples in this guide also
+BIND 9.16.9 or later. Most of the information and examples in this guide also
 apply to versions of BIND later than 9.9.0, but some of the key features described here
-were only introduced in version 9.16.0. Readers are assumed to have basic
+were only introduced in version 9.16.9. Readers are assumed to have basic
 working knowledge of the Domain Name System (DNS) and related network
 infrastructure, such as concepts of TCP/IP. In-depth knowledge of DNS and
 TCP/IP is not required. The guide assumes no prior knowledge of DNSSEC or
@@ -219,7 +219,7 @@ trust one key: the root key.
 .. _dnssec_12_steps:
 
 The 12-Step DNSSEC Validation Process (Simplified)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The following example shows the 12 steps of the DNSSEC validating process 
 at a very high level, looking up the name ``www.isc.org`` :
@@ -250,7 +250,7 @@ at a very high level, looking up the name ``www.isc.org`` :
 
     Let's take a quick break here and look at what we've got so far...
     how can our server trust this answer? If a clever attacker had taken over
-    the ``isc.org`` name server(s), or course she would send matching
+    the ``isc.org`` name server(s), of course she would send matching
     keys and signatures. We need to ask someone else to have confidence
     that we are really talking to the real ``isc.org`` name server. This
     is a critical part of DNSSEC: at some point, the DNS administrators
@@ -306,7 +306,7 @@ at a very high level, looking up the name ``www.isc.org`` :
 .. _chain_of_trust:
 
 Chain of Trust
-^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~
 
 But what about the root server itself? Who do we go to verify root's
 keys? There's no parent zone for root. In security, you have to trust

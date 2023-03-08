@@ -12,9 +12,6 @@
  */
 
 /*
- * duration_fromtext initially taken from OpenDNSSEC code base.
- * Modified to fit the BIND 9 code.
- *
  * Copyright (c) 2009-2018 NLNet Labs.
  * All rights reserved.
  *
@@ -423,8 +420,7 @@ cfg_tuple_get(const cfg_obj_t *tupleobj, const char *name) {
 			return (tupleobj->value.tuple[i]);
 		}
 	}
-	INSIST(0);
-	ISC_UNREACHABLE();
+	UNREACHABLE();
 }
 
 isc_result_t
@@ -1038,8 +1034,8 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	char *str;
 	const char *indicators = "YMWDHMS";
 	int count, i;
-	int durationlen[7];
-	cfg_duration_t duration;
+	int durationlen[7] = { 0 };
+	isccfg_duration_t duration;
 	/*
 	 * D ? The duration has a date part.
 	 * T ? The duration has a time part.
@@ -1070,10 +1066,8 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 			} else {
 				T = true;
 			}
-		} else {
-			durationlen[i] = 0;
+			count += durationlen[i];
 		}
-		count += durationlen[i];
 	}
 	/*
 	 * Special case for seconds which is not taken into account in the
@@ -1082,7 +1076,8 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	 * case this function will print "PT0S".
 	 */
 	if (duration.parts[6] > 0 ||
-	    (!D && !duration.parts[4] && !duration.parts[5])) {
+	    (!D && !duration.parts[4] && !duration.parts[5]))
+	{
 		durationlen[6] = 1 + numlen(duration.parts[6]);
 		T = true;
 		count += durationlen[6];
@@ -1102,7 +1097,7 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 		if (duration.parts[i] > 0) {
 			snprintf(str, durationlen[i] + 2, "%u%c",
 				 (uint32_t)duration.parts[i], indicators[i]);
-			str += durationlen[i] + 1;
+			str += durationlen[i];
 		}
 		if (i == 3 && T) {
 			snprintf(str, 2, "T");
@@ -1111,7 +1106,8 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	}
 	/* Special case for seconds. */
 	if (duration.parts[6] > 0 ||
-	    (!D && !duration.parts[4] && !duration.parts[3])) {
+	    (!D && !duration.parts[4] && !duration.parts[5]))
+	{
 		snprintf(str, durationlen[6] + 2, "%u%c",
 			 (uint32_t)duration.parts[6], indicators[6]);
 	}
@@ -1120,7 +1116,7 @@ cfg_print_duration(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 
 void
 cfg_print_duration_or_unlimited(cfg_printer_t *pctx, const cfg_obj_t *obj) {
-	cfg_duration_t duration;
+	isccfg_duration_t duration;
 
 	REQUIRE(pctx != NULL);
 	REQUIRE(obj != NULL);
@@ -1143,163 +1139,17 @@ cfg_obj_isduration(const cfg_obj_t *obj) {
 uint32_t
 cfg_obj_asduration(const cfg_obj_t *obj) {
 	REQUIRE(obj != NULL && obj->type->rep == &cfg_rep_duration);
-	uint32_t duration = 0;
-	duration += obj->value.duration.parts[6];	      /* Seconds */
-	duration += obj->value.duration.parts[5] * 60;	      /* Minutes */
-	duration += obj->value.duration.parts[4] * 3600;      /* Hours */
-	duration += obj->value.duration.parts[3] * 86400;     /* Days */
-	duration += obj->value.duration.parts[2] * 86400 * 7; /* Weaks */
-	/*
-	 * The below additions are not entirely correct
-	 * because days may very per month and per year.
-	 */
-	duration += obj->value.duration.parts[1] * 86400 * 31;	/* Months */
-	duration += obj->value.duration.parts[0] * 86400 * 365; /* Years */
-	return (duration);
-}
-
-static isc_result_t
-duration_fromtext(isc_textregion_t *source, cfg_duration_t *duration) {
-	char buf[CFG_DURATION_MAXLEN];
-	char *P, *X, *T, *W, *str;
-	bool not_weeks = false;
-	int i;
-
-	/*
-	 * Copy the buffer as it may not be NULL terminated.
-	 * Anyone having a duration longer than 63 characters is crazy.
-	 */
-	if (source->length > sizeof(buf) - 1) {
-		return (ISC_R_BADNUMBER);
-	}
-	/* Copy source->length bytes and NULL terminate. */
-	snprintf(buf, sizeof(buf), "%.*s", (int)source->length, source->base);
-	str = buf;
-
-	/* Clear out duration. */
-	for (i = 0; i < 7; i++) {
-		duration->parts[i] = 0;
-	}
-
-	/* Every duration starts with 'P' */
-	P = strpbrk(str, "Pp");
-	if (P == NULL) {
-		return (ISC_R_BADNUMBER);
-	}
-
-	/* Record the time indicator. */
-	T = strpbrk(str, "Tt");
-
-	/* Record years. */
-	X = strpbrk(str, "Yy");
-	if (X != NULL) {
-		duration->parts[0] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Record months. */
-	X = strpbrk(str, "Mm");
-
-	/*
-	 * M could be months or minutes. This is months if there is no time
-	 * part, or this M indicator is before the time indicator.
-	 */
-	if (X != NULL && (T == NULL || (size_t)(X - P) < (size_t)(T - P))) {
-		duration->parts[1] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Record days. */
-	X = strpbrk(str, "Dd");
-	if (X != NULL) {
-		duration->parts[3] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Time part? */
-	if (T != NULL) {
-		str = T;
-		not_weeks = true;
-	}
-
-	/* Record hours. */
-	X = strpbrk(str, "Hh");
-	if (X != NULL && T != NULL) {
-		duration->parts[4] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Record minutes. */
-	X = strpbrk(str, "Mm");
-
-	/*
-	 * M could be months or minutes. This is minutes if there is a time
-	 * part and the M indicator is behind the time indicator.
-	 */
-	if (X != NULL && T != NULL && (size_t)(X - P) > (size_t)(T - P)) {
-		duration->parts[5] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Record seconds. */
-	X = strpbrk(str, "Ss");
-	if (X != NULL && T != NULL) {
-		duration->parts[6] = atoi(str + 1);
-		str = X;
-		not_weeks = true;
-	}
-
-	/* Or is the duration configured in weeks? */
-	W = strpbrk(buf, "Ww");
-	if (W != NULL) {
-		if (not_weeks) {
-			/* Mix of weeks and other indicators is not allowed */
-			return (ISC_R_BADNUMBER);
-		} else {
-			duration->parts[2] = atoi(str + 1);
-			str = W;
-		}
-	}
-
-	/* Deal with trailing garbage. */
-	if (str[1] != '\0') {
-		return (ISC_R_BADNUMBER);
-	}
-
-	return (ISC_R_SUCCESS);
+	return isccfg_duration_toseconds(&(obj->value.duration));
 }
 
 static isc_result_t
 parse_duration(cfg_parser_t *pctx, cfg_obj_t **ret) {
 	isc_result_t result;
 	cfg_obj_t *obj = NULL;
-	cfg_duration_t duration;
+	isccfg_duration_t duration;
 
-	duration.unlimited = false;
-
-	if (toupper((unsigned char)TOKEN_STRING(pctx)[0]) == 'P') {
-		result = duration_fromtext(&pctx->token.value.as_textregion,
-					   &duration);
-		duration.iso8601 = true;
-	} else {
-		uint32_t ttl;
-		result = dns_ttl_fromtext(&pctx->token.value.as_textregion,
-					  &ttl);
-		/*
-		 * With dns_ttl_fromtext() the information on optional units.
-		 * is lost, and is treated as seconds from now on.
-		 */
-		for (int i = 0; i < 6; i++) {
-			duration.parts[i] = 0;
-		}
-		duration.parts[6] = ttl;
-		duration.iso8601 = false;
-	}
+	result = isccfg_parse_duration(&pctx->token.value.as_textregion,
+				       &duration);
 
 	if (result == ISC_R_RANGE) {
 		cfg_parser_error(pctx, CFG_LOG_NEAR,
@@ -1347,7 +1197,7 @@ cfg_parse_duration_or_unlimited(cfg_parser_t *pctx, const cfg_type_t *type,
 				cfg_obj_t **ret) {
 	isc_result_t result;
 	cfg_obj_t *obj = NULL;
-	cfg_duration_t duration;
+	isccfg_duration_t duration;
 
 	UNUSED(type);
 
@@ -1777,7 +1627,8 @@ parse_geoip(cfg_parser_t *pctx, const cfg_type_t *type, cfg_obj_t **ret) {
 	if (pctx->token.type == isc_tokentype_string) {
 		CHECK(cfg_gettoken(pctx, 0));
 		if (strcasecmp(TOKEN_STRING(pctx), "db") == 0 &&
-		    obj->value.tuple[1] == NULL) {
+		    obj->value.tuple[1] == NULL)
+		{
 			CHECK(cfg_parse_obj(pctx, fields[1].type,
 					    &obj->value.tuple[1]));
 		} else {
@@ -2160,7 +2011,8 @@ print_list(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	const cfg_listelt_t *elt;
 
 	for (elt = ISC_LIST_HEAD(*list); elt != NULL;
-	     elt = ISC_LIST_NEXT(elt, link)) {
+	     elt = ISC_LIST_NEXT(elt, link))
+	{
 		if ((pctx->flags & CFG_PRINTER_ONELINE) != 0) {
 			cfg_print_obj(pctx, elt->obj);
 			cfg_print_cstr(pctx, "; ");
@@ -2259,7 +2111,8 @@ cfg_print_spacelist(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	list = &obj->value.list;
 
 	for (elt = ISC_LIST_HEAD(*list); elt != NULL;
-	     elt = ISC_LIST_NEXT(elt, link)) {
+	     elt = ISC_LIST_NEXT(elt, link))
+	{
 		cfg_print_obj(pctx, elt->obj);
 		if (ISC_LIST_NEXT(elt, link) != NULL) {
 			cfg_print_cstr(pctx, " ");
@@ -2401,9 +2254,11 @@ cfg_parse_mapbody(cfg_parser_t *pctx, const cfg_type_t *type, cfg_obj_t **ret) {
 		clause = NULL;
 		for (clauseset = clausesets; *clauseset != NULL; clauseset++) {
 			for (clause = *clauseset; clause->name != NULL;
-			     clause++) {
+			     clause++)
+			{
 				if (strcasecmp(TOKEN_STRING(pctx),
-					       clause->name) == 0) {
+					       clause->name) == 0)
+				{
 					goto done;
 				}
 			}
@@ -2651,7 +2506,8 @@ cfg_print_mapbody(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 	REQUIRE(obj != NULL);
 
 	for (clauseset = obj->value.map.clausesets; *clauseset != NULL;
-	     clauseset++) {
+	     clauseset++)
+	{
 		isc_symvalue_t symval;
 		const cfg_clausedef_t *clause;
 
@@ -2667,7 +2523,8 @@ cfg_print_mapbody(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 					cfg_listelt_t *elt;
 					for (elt = ISC_LIST_HEAD(*list);
 					     elt != NULL;
-					     elt = ISC_LIST_NEXT(elt, link)) {
+					     elt = ISC_LIST_NEXT(elt, link))
+					{
 						print_symval(pctx, clause->name,
 							     elt->obj);
 					}
@@ -2679,8 +2536,7 @@ cfg_print_mapbody(cfg_printer_t *pctx, const cfg_obj_t *obj) {
 			} else if (result == ISC_R_NOTFOUND) {
 				/* do nothing */
 			} else {
-				INSIST(0);
-				ISC_UNREACHABLE();
+				UNREACHABLE();
 			}
 		}
 	}
@@ -3015,8 +2871,7 @@ token_addr(cfg_parser_t *pctx, unsigned int flags, isc_netaddr_t *na) {
 			isc_netaddr_any6(na);
 			return (ISC_R_SUCCESS);
 		} else {
-			INSIST(0);
-			ISC_UNREACHABLE();
+			UNREACHABLE();
 		}
 	} else {
 		if ((flags & (CFG_ADDR_V4OK | CFG_ADDR_V4PREFIXOK)) != 0) {
@@ -3164,29 +3019,6 @@ cfg_print_rawaddr(cfg_printer_t *pctx, const isc_netaddr_t *na) {
 			isc_buffer_usedlength(&buf));
 }
 
-isc_result_t
-cfg_parse_dscp(cfg_parser_t *pctx, isc_dscp_t *dscp) {
-	isc_result_t result;
-
-	REQUIRE(pctx != NULL);
-	REQUIRE(dscp != NULL);
-
-	CHECK(cfg_gettoken(pctx, ISC_LEXOPT_NUMBER | ISC_LEXOPT_CNUMBER));
-
-	if (pctx->token.type != isc_tokentype_number) {
-		cfg_parser_error(pctx, CFG_LOG_NEAR, "expected number");
-		return (ISC_R_UNEXPECTEDTOKEN);
-	}
-	if (pctx->token.value.as_ulong > 63U) {
-		cfg_parser_error(pctx, CFG_LOG_NEAR, "dscp out of range");
-		return (ISC_R_RANGE);
-	}
-	*dscp = (isc_dscp_t)(pctx->token.value.as_ulong);
-	return (ISC_R_SUCCESS);
-cleanup:
-	return (result);
-}
-
 /* netaddr */
 
 static unsigned int netaddr_flags = CFG_ADDR_V4OK | CFG_ADDR_V6OK;
@@ -3294,8 +3126,7 @@ cfg_parse_netprefix(cfg_parser_t *pctx, const cfg_type_t *type,
 		addrlen = 128;
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	expectprefix = (result == ISC_R_IPV4PREFIX);
 	CHECK(cfg_peektoken(pctx, 0));
@@ -3379,24 +3210,39 @@ parse_sockaddrsub(cfg_parser_t *pctx, const cfg_type_t *type, int flags,
 	isc_result_t result;
 	isc_netaddr_t netaddr;
 	in_port_t port = 0;
-	isc_dscp_t dscp = -1;
 	cfg_obj_t *obj = NULL;
 	int have_port = 0, have_dscp = 0;
+	cfg_obj_t *dscp = NULL;
 
 	CHECK(cfg_create_obj(pctx, type, &obj));
 	CHECK(cfg_parse_rawaddr(pctx, flags, &netaddr));
+	obj->value.sockaddrdscp.dscp = -1;
 	for (;;) {
 		CHECK(cfg_peektoken(pctx, 0));
 		if (pctx->token.type == isc_tokentype_string) {
 			if (strcasecmp(TOKEN_STRING(pctx), "port") == 0) {
+				if ((pctx->flags & CFG_PCTX_NODEPRECATED) ==
+					    0 &&
+				    (flags & CFG_ADDR_PORTOK) == 0)
+				{
+					cfg_parser_warning(
+						pctx, 0,
+						"token 'port' is deprecated");
+				}
 				CHECK(cfg_gettoken(pctx, 0)); /* read "port" */
 				CHECK(cfg_parse_rawport(pctx, flags, &port));
 				++have_port;
 			} else if ((flags & CFG_ADDR_DSCPOK) != 0 &&
 				   strcasecmp(TOKEN_STRING(pctx), "dscp") == 0)
 			{
+				cfg_parser_warning(pctx, 0,
+						   "'dscp' is obsolete and "
+						   "should be removed");
 				CHECK(cfg_gettoken(pctx, 0)); /* read "dscp" */
-				CHECK(cfg_parse_dscp(pctx, &dscp));
+				CHECK(cfg_parse_uint32(pctx, NULL, &dscp));
+				obj->value.sockaddrdscp.dscp =
+					cfg_obj_asuint32(dscp);
+				cfg_obj_destroy(pctx, &dscp);
 				++have_dscp;
 			} else {
 				break;
@@ -3417,7 +3263,6 @@ parse_sockaddrsub(cfg_parser_t *pctx, const cfg_type_t *type, int flags,
 		goto cleanup;
 	}
 	isc_sockaddr_fromnetaddr(&obj->value.sockaddr, &netaddr, port);
-	obj->value.sockaddrdscp.dscp = dscp;
 	*ret = obj;
 	return (ISC_R_SUCCESS);
 
@@ -3426,13 +3271,14 @@ cleanup:
 	return (result);
 }
 
-static unsigned int sockaddr_flags = CFG_ADDR_V4OK | CFG_ADDR_V6OK;
+static unsigned int sockaddr_flags = CFG_ADDR_V4OK | CFG_ADDR_V6OK |
+				     CFG_ADDR_PORTOK;
 cfg_type_t cfg_type_sockaddr = { "sockaddr",	     cfg_parse_sockaddr,
 				 cfg_print_sockaddr, cfg_doc_sockaddr,
 				 &cfg_rep_sockaddr,  &sockaddr_flags };
 
 static unsigned int sockaddrdscp_flags = CFG_ADDR_V4OK | CFG_ADDR_V6OK |
-					 CFG_ADDR_DSCPOK;
+					 CFG_ADDR_DSCPOK | CFG_ADDR_PORTOK;
 cfg_type_t cfg_type_sockaddrdscp = { "sockaddr",	 cfg_parse_sockaddr,
 				     cfg_print_sockaddr, cfg_doc_sockaddr,
 				     &cfg_rep_sockaddr,	 &sockaddrdscp_flags };
@@ -3505,13 +3351,12 @@ cfg_doc_sockaddr(cfg_printer_t *pctx, const cfg_type_t *type) {
 		POST(n);
 	}
 	cfg_print_cstr(pctx, " ) ");
-	if ((*flagp & CFG_ADDR_WILDOK) != 0) {
-		cfg_print_cstr(pctx, "[ port ( <integer> | * ) ]");
-	} else {
-		cfg_print_cstr(pctx, "[ port <integer> ]");
-	}
-	if ((*flagp & CFG_ADDR_DSCPOK) != 0) {
-		cfg_print_cstr(pctx, " [ dscp <integer> ]");
+	if ((*flagp & CFG_ADDR_PORTOK) != 0) {
+		if ((*flagp & CFG_ADDR_WILDOK) != 0) {
+			cfg_print_cstr(pctx, "[ port ( <integer> | * ) ]");
+		} else {
+			cfg_print_cstr(pctx, "[ port <integer> ]");
+		}
 	}
 }
 
@@ -3525,12 +3370,6 @@ const isc_sockaddr_t *
 cfg_obj_assockaddr(const cfg_obj_t *obj) {
 	REQUIRE(obj != NULL && obj->type->rep == &cfg_rep_sockaddr);
 	return (&obj->value.sockaddr);
-}
-
-isc_dscp_t
-cfg_obj_getdscp(const cfg_obj_t *obj) {
-	REQUIRE(obj != NULL && obj->type->rep == &cfg_rep_sockaddr);
-	return (obj->value.sockaddrdscp.dscp);
 }
 
 isc_result_t

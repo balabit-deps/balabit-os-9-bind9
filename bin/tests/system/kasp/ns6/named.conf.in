@@ -31,17 +31,26 @@ options {
 
 key rndc_key {
 	secret "1234abcd8765";
-	algorithm hmac-sha256;
+	algorithm @DEFAULT_HMAC@;
 };
 
 controls {
 	inet 10.53.0.6 port @CONTROLPORT@ allow { any; } keys { rndc_key; };
 };
 
+/* This zone switch from dynamic to inline-signing. */
+zone "dynamic2inline.kasp" {
+	type primary;
+	file "dynamic2inline.kasp.db";
+	allow-update { any; };
+	dnssec-policy "default";
+};
+
 /* These zones are going insecure. */
 zone "step1.going-insecure.kasp" {
 	type primary;
 	file "step1.going-insecure.kasp.db";
+	inline-signing yes;
 	dnssec-policy "unsigning";
 };
 
@@ -55,6 +64,7 @@ zone "step1.going-insecure-dynamic.kasp" {
 zone "step1.going-straight-to-none.kasp" {
 	type primary;
 	file "step1.going-straight-to-none.kasp.db";
+	inline-signing yes;
 	dnssec-policy "default";
 };
 
@@ -62,12 +72,14 @@ zone "step1.going-straight-to-none.kasp" {
 zone "step1.algorithm-roll.kasp" {
 	type primary;
 	file "step1.algorithm-roll.kasp.db";
-	dnssec-policy "rsasha1";
+	inline-signing yes;
+	dnssec-policy "rsasha256";
 };
 
 zone "step1.csk-algorithm-roll.kasp" {
 	type primary;
 	file "step1.csk-algorithm-roll.kasp.db";
+	inline-signing yes;
 	dnssec-policy "csk-algoroll";
 };
 
@@ -79,6 +91,7 @@ dnssec-policy "modified" {
 
 zone example {
 	type primary;
-	dnssec-policy modified;
 	file "example.db";
+	inline-signing yes;
+	dnssec-policy modified;
 };

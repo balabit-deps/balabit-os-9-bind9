@@ -1,3 +1,65 @@
+bind9 (1:9.18.12-0ubuntu0.22.04.1) jammy; urgency=medium
+
+  * New upstream releases 9.18.2 - 9.18.12 (LP: #2003586)
+    - Updates:
+      + update-quota option
+      + named -V shows supported cryptographic algorithms
+      + Catalog Zones schema version 2 support in named
+      + DNS error support Stale Answer and Stale NXDOMAIN Answer
+      + Remote TLS certificate verification support
+      + reusereport option
+    - Bug Fixes Include:
+      + Fix crash when using dig with +nssearch and +tcp (LP: #1258003)
+      + Fix incomplete results using dig with +nssearch (LP: #1970252)
+      + Fix loading of preinstalled plugins (LP: #2006972)
+      + CVE-2022-2795, CVE-2022-2881, CVE-2022-2906, CVE-2022-3080,
+        CVE-2022-38178, CVE-2022-3094, CVE-2022-3736, CVE-2022-3924,
+        CVE-2022-1183
+      + Fix thread safety in dns_dispatch
+      + Fix ADB quota management in resolver
+      + Fix Prohibited DNS error on allow-recursion
+      + Fix crash when restarting server with active statschannel connection
+      + Fix use after free for catalog zone processing
+      + Fix leak of dns_keyfileio_t objects
+      + Fix nslookup failure to use port option when record type ANY is used
+      + Fix crash on dnssec-policy zone with NSEC3 and inline-signing turned on
+      + Fix inheritance when setting remote server port
+      + Fix assertion error when accessing statistics channel
+      + Fix rndc dumpdb -expired for stuck cache
+      + Fix check for other name servers after receiving FORMERR
+      + Fix deletion of CDS after zone sign
+      + Fix dighost query context management
+      + Fix dig hanging due to IPv4 mapped IPv6 address
+      + See https://bind9.readthedocs.io/en/v9_18_12/notes.html#notes-for-bind-9-18-12
+        for additional bug fixes and information
+  * Improve dep-8 test suite (LP: #2003584):
+    - d/t/zonetest: Add dep8 test for checking the domain zone creation process
+    - d/t/control: Add new test outline
+  * d/bind9-doc.docs: Stop installing removed file doc/misc/options.active
+  * Remove patches for bugs LP #1964400 and LP #1964686 fixed upstream:
+    - lp1964400-lp1964686-Fix-an-issue-in-dig-when-retrying-with-the-next-serv
+    - lp1964400-lp1964686-When-resending-a-UDP-request-insert-the-query-to-the
+    - lp1964400-lp1964686-Add-digdelv-system-test-to-check-timed-out-result-fo
+    - lp1964400-lp1964686-After-dig-request-errors-try-to-use-other-servers-wh
+    - lp1964400-lp1964686-Add-digdelv-system-test-to-check-that-dig-tries-othe
+    - lp1964400-lp1964686-Fix-dig-error-when-trying-the-next-server-after-a-TC
+    - lp1964400-lp1964686-Add-various-dig-host-tests-for-TCP-UDP-socket-error-
+  * Remove CVE patches fixed upstream:
+    - debian/patches/CVE-2022-1183.patch
+      [Included in upstream release 9.18.3]
+    - debian/patches/CVE-2022-2795.patch
+    - debian/patches/CVE-2022-2881.patch
+    - debian/patches/CVE-2022-2906.patch
+    - debian/patches/CVE-2022-3080.patch
+    - debian/patches/CVE-2022-38178.patch
+      [Included in upstream release 9.18.7]
+    - debian/patches/CVE-2022-3094.patch
+    - debian/patches/CVE-2022-3736.patch
+    - debian/patches/CVE-2022-3924.patch
+      [Included in upstream release 9.18.11]
+
+ -- Lena Voytek <lena.voytek@canonical.com>  Wed, 08 Mar 2023 12:08:55 -0700
+
 bind9 (1:9.18.1-1ubuntu1.3) jammy-security; urgency=medium
 
   * SECURITY UPDATE: An UPDATE message flood may cause named to exhaust all

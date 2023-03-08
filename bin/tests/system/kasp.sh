@@ -64,6 +64,9 @@ VIEW3="C1Azf+gGPMmxrUg/WQINP6eV9Y0="
 # EXPECT_KRRSIG
 # LEGACY
 # PRIVATE
+# PRIVKEY_STAT
+# PUBKEY_STAT
+# STATE_STAT
 
 key_key() {
 	echo "${1}__${2}"
@@ -77,6 +80,10 @@ key_set() {
 	eval "$(key_key "$1" "$2")='$3'"
 }
 
+key_stat() {
+	$PERL -e 'print((stat @ARGV[0])[9] . "\n");' "$1"
+}
+
 # Save certain values in the KEY array.
 key_save()
 {
@@ -86,6 +93,10 @@ key_save()
 	key_set "$1" BASEFILE "$BASE_FILE"
 	# Save creation date.
 	key_set "$1" CREATED "${KEY_CREATED}"
+	# Save key change time.
+	key_set "$1" PRIVKEY_STAT $(key_stat "${BASE_FILE}.private")
+	key_set "$1" PUBKEY_STAT $(key_stat "${BASE_FILE}.key")
+	key_set "$1" STATE_STAT $(key_stat "${BASE_FILE}.state")
 }
 
 # Clear key state.
@@ -98,6 +109,7 @@ key_clear() {
 	key_set "$1" "ROLE" 'none'
 	key_set "$1" "KSK" 'no'
 	key_set "$1" "ZSK" 'no'
+	key_set "$1" "FLAGS" '0'
 	key_set "$1" "LIFETIME" 'none'
 	key_set "$1" "ALG_NUM" '0'
 	key_set "$1" "ALG_STR" 'none'
@@ -118,7 +130,9 @@ key_clear() {
 	key_set "$1" "EXPECT_KRRSIG" 'no'
 	key_set "$1" "LEGACY" 'no'
 	key_set "$1" "PRIVATE" 'yes'
-	key_set "$1" "FLAGS" '0'
+	key_set "$1" "PRIVKEY_STAT" '0'
+	key_set "$1" "PUBKEY_STAT" '0'
+	key_set "$1" "STATE_STAT" '0'
 }
 
 # Start clear.
@@ -681,7 +695,7 @@ dnssec_verify()
 	echo_i "dnssec-verify zone ${ZONE} ($n)"
 	ret=0
 	_dig_with_opts "$ZONE" "@${SERVER}" AXFR > dig.out.axfr.test$n || _log_error "dig ${ZONE} AXFR failed"
-	$VERIFY -z -o "$ZONE" dig.out.axfr.test$n > /dev/null || _log_error "dnssec verify zone $ZONE failed"
+	$VERIFY -z -o "$ZONE" dig.out.axfr.test$n > verify.out.$ZONE.test$n || _log_error "dnssec verify zone $ZONE failed"
 	test "$ret" -eq 0 || echo_i "failed"
 	status=$((status+ret))
 }
@@ -809,9 +823,9 @@ check_keys() {
 	status=$((status+ret))
 }
 
-# Call rndc dnssec -status on server $1 for zone $2 and check output.
-# This is a loose verification, it just tests if the right policy
-# name is returned, and if all expected keys are listed.  The rndc
+# Call rndc dnssec -status on server $1 for zone $3 in view $4 with policy $2
+# and check output. This is a loose verification, it just tests if the right
+# policy name is returned, and if all expected keys are listed.  The rndc
 # dnssec -status output also lists whether a key is published,
 # used for signing, is retired, or is removed, and if not when
 # it is scheduled to do so, and it shows the states for the various
@@ -848,6 +862,28 @@ check_dnssecstatus() {
 
 	test "$ret" -eq 0 || echo_i "failed"
 	status=$((status+ret))
+}
+
+# Call rndc zonestatus on server $1 for zone $2 in view $3 and check output if
+# inline-signing is enabled.
+check_inlinesigning() {
+	_server=$1
+	_zone=$2
+	_view=$3
+
+	_rndccmd $_server zonestatus $_zone in $_view > rndc.zonestatus.out.$_zone.$n || return 1
+	grep "inline signing: yes" rndc.zonestatus.out.$_zone.$n > /dev/null || return 1
+}
+
+# Call rndc zonestatus on server $1 for zone $2 in view $3 and check output if
+# the zone is dynamic.
+check_isdynamic() {
+	_server=$1
+	_zone=$2
+	_view=$3
+
+	_rndccmd $_server zonestatus $_zone in $_view > rndc.zonestatus.out.$_zone.$n || return 1
+	grep "dynamic: yes" rndc.zonestatus.out.$_zone.$n > /dev/null || return 1
 }
 
 # Check if RRset of type $1 in file $2 is signed with the right keys.
@@ -1008,6 +1044,15 @@ check_cds() {
 	status=$((status+ret))
 }
 
+_find_dnskey() {
+	_owner="${ZONE}."
+	_alg="$(key_get $1 ALG_NUM)"
+	_flags="$(key_get $1 FLAGS)"
+	_key_file="$(key_get $1 BASEFILE).key"
+
+	awk '$1 == "'"$_owner"'" && $2 == "'"$DNSKEY_TTL"'" && $3 == "IN" && $4 == "DNSKEY" && $5 == "'"$_flags"'" && $6 == "3" && $7 == "'"$_alg"'" { print $8 }' < "$_key_file"
+}
+
 
 # Test DNSKEY query.
 _check_apex_dnskey() {
@@ -1015,45 +1060,54 @@ _check_apex_dnskey() {
 	grep "status: NOERROR" "dig.out.$DIR.test$n" > /dev/null || return 1
 
 	_checksig=0
-	_flags="$(key_get KEY1 FLAGS)"
 
 	if [ "$(key_get KEY1 STATE_DNSKEY)" = "rumoured" ] || [ "$(key_get KEY1 STATE_DNSKEY)" = "omnipresent" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY1 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null || return 1
+		_pubkey=$(_find_dnskey KEY1)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null || return 1
 		_checksig=1
 	elif [ "$(key_get KEY1 EXPECT)" = "yes" ]; then
-		grep "${ZONE}\.*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY1 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null && return 1
+		_pubkey=$(_find_dnskey KEY1)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null && return 1
 	fi
-
-	_flags="$(key_get KEY2 FLAGS)"
 
 	if [ "$(key_get KEY2 STATE_DNSKEY)" = "rumoured" ] || [ "$(key_get KEY2 STATE_DNSKEY)" = "omnipresent" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY2 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null || return 1
+		_pubkey=$(_find_dnskey KEY2)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null || return 1
 		_checksig=1
 	elif [ "$(key_get KEY2 EXPECT)" = "yes" ]; then
-		grep "${ZONE}\.*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY2 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null && return 1
+		_pubkey=$(_find_dnskey KEY2)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null && return 1
 	fi
-
-	_flags="$(key_get KEY3 FLAGS)"
 
 	if [ "$(key_get KEY3 STATE_DNSKEY)" = "rumoured" ] || [ "$(key_get KEY3 STATE_DNSKEY)" = "omnipresent" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY3 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null || return 1
+		_pubkey=$(_find_dnskey KEY3)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null || return 1
 		_checksig=1
 	elif [ "$(key_get KEY3 EXPECT)" = "yes" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY3 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null && return 1
+		_pubkey=$(_find_dnskey KEY3)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null && return 1
 	fi
 
-	_flags="$(key_get KEY4 FLAGS)"
-
 	if [ "$(key_get KEY4 STATE_DNSKEY)" = "rumoured" ] || [ "$(key_get KEY4 STATE_DNSKEY)" = "omnipresent" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY4 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null || return 1
+		_pubkey=$(_find_dnskey KEY4)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null || return 1
 		_checksig=1
 	elif [ "$(key_get KEY4 EXPECT)" = "yes" ]; then
-		grep "${ZONE}\..*${DNSKEY_TTL}.*IN.*DNSKEY.*${_flags}.*.3.*$(key_get KEY4 ALG_NUM)" "dig.out.$DIR.test$n" > /dev/null && return 1
+		_pubkey=$(_find_dnskey KEY4)
+		test -z "$_pubkey" && return 1
+		grep -F "$_pubkey" "dig.out.$DIR.test$n" > /dev/null && return 1
 	fi
 
 	test "$_checksig" -eq 0 && return 0
 
-	retry_quiet 3 _check_signatures "DNSKEY" "dig.out.$DIR.test$n" "KSK" || return 1
+	_check_signatures "DNSKEY" "dig.out.$DIR.test$n" "KSK" || return 1
 
 	return 0
 }
@@ -1066,11 +1120,11 @@ check_apex() {
 	n=$((n+1))
 	echo_i "check DNSKEY rrset is signed correctly for zone ${ZONE} ($n)"
 	ret=0
-	retry_quiet 3 _check_apex_dnskey || ret=1
+	retry_quiet 10 _check_apex_dnskey || ret=1
 	test "$ret" -eq 0 || echo_i "failed"
 	status=$((status+ret))
 
-	# We retry the DNSKEY query for at most three seconds to avoid test
+	# We retry the DNSKEY query for at most ten seconds to avoid test
 	# failures due to timing issues. If the DNSKEY query check passes this
 	# means the zone is resigned and further apex checks (SOA, CDS, CDNSKEY)
 	# don't need to be retried quietly.
