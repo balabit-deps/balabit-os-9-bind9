@@ -519,7 +519,7 @@ fetch_done(isc_task_t *task, isc_event_t *event) {
 	client_resfind(rctx, fevent);
 }
 
-static inline isc_result_t
+static isc_result_t
 start_fetch(resctx_t *rctx) {
 	isc_result_t result;
 	int fopts = 0;
@@ -777,7 +777,7 @@ client_resfind(resctx_t *rctx, dns_fetchevent_t *event) {
 			int n = 0;
 			dns_rdatasetiter_t *rdsiter = NULL;
 
-			tresult = dns_db_allrdatasets(db, node, NULL, 0,
+			tresult = dns_db_allrdatasets(db, node, NULL, 0, 0,
 						      &rdsiter);
 			if (tresult != ISC_R_SUCCESS) {
 				result = tresult;
@@ -804,7 +804,8 @@ client_resfind(resctx_t *rctx, dns_fetchevent_t *event) {
 				tresult = dns_rdatasetiter_next(rdsiter);
 
 				if (tresult == ISC_R_SUCCESS &&
-				    rctx->rdataset == NULL) {
+				    rctx->rdataset == NULL)
+				{
 					tresult = getrdataset(mctx,
 							      &rctx->rdataset);
 					if (tresult != ISC_R_SUCCESS) {
@@ -863,7 +864,8 @@ client_resfind(resctx_t *rctx, dns_fetchevent_t *event) {
 			dns_rdataset_t *rdataset;
 
 			while ((rdataset = ISC_LIST_HEAD(ansname->list)) !=
-			       NULL) {
+			       NULL)
+			{
 				ISC_LIST_UNLINK(ansname->list, rdataset, link);
 				putrdataset(mctx, &rdataset);
 			}
@@ -1311,7 +1313,7 @@ dns_client_addtrustedkey(dns_client_t *client, dns_rdataclass_t rdclass,
 					  digest, &ds));
 	}
 
-	CHECK(dns_keytable_add(secroots, false, false, name, &ds));
+	CHECK(dns_keytable_add(secroots, false, false, name, &ds, NULL, NULL));
 
 cleanup:
 	if (view != NULL) {

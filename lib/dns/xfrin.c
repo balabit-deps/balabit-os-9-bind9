@@ -120,7 +120,6 @@ struct dns_xfrin_ctx {
 	 * may differ due to IXFR->AXFR fallback.
 	 */
 	dns_rdatatype_t reqtype;
-	isc_dscp_t dscp;
 
 	isc_sockaddr_t primaryaddr;
 	isc_sockaddr_t sourceaddr;
@@ -200,9 +199,9 @@ static void
 xfrin_create(isc_mem_t *mctx, dns_zone_t *zone, dns_db_t *db, isc_nm_t *netmgr,
 	     dns_name_t *zonename, dns_rdataclass_t rdclass,
 	     dns_rdatatype_t reqtype, const isc_sockaddr_t *primaryaddr,
-	     const isc_sockaddr_t *sourceaddr, isc_dscp_t dscp,
-	     dns_tsigkey_t *tsigkey, dns_transport_t *transport,
-	     isc_tlsctx_cache_t *tlsctx_cache, dns_xfrin_ctx_t **xfrp);
+	     const isc_sockaddr_t *sourceaddr, dns_tsigkey_t *tsigkey,
+	     dns_transport_t *transport, isc_tlsctx_cache_t *tlsctx_cache,
+	     dns_xfrin_ctx_t **xfrp);
 
 static isc_result_t
 axfr_init(dns_xfrin_ctx_t *xfr);
@@ -500,7 +499,8 @@ xfr_rr(dns_xfrin_ctx_t *xfr, dns_name_t *name, uint32_t ttl,
 	xfr->nrecs++;
 
 	if (rdata->type == dns_rdatatype_none ||
-	    dns_rdatatype_ismeta(rdata->type)) {
+	    dns_rdatatype_ismeta(rdata->type))
+	{
 		FAIL(DNS_R_FORMERR);
 	}
 
@@ -510,7 +510,8 @@ xfr_rr(dns_xfrin_ctx_t *xfr, dns_name_t *name, uint32_t ttl,
 	 * apex.
 	 */
 	if (rdata->type == dns_rdatatype_soa &&
-	    !dns_name_equal(&xfr->name, name)) {
+	    !dns_name_equal(&xfr->name, name))
+	{
 		char namebuf[DNS_NAME_FORMATSIZE];
 		dns_name_format(name, namebuf, sizeof(namebuf));
 		xfrin_log(xfr, ISC_LOG_DEBUG(3), "SOA name mismatch: '%s'",
@@ -644,7 +645,8 @@ redo:
 			}
 		}
 		if (rdata->type == dns_rdatatype_ns &&
-		    dns_name_iswildcard(name)) {
+		    dns_name_iswildcard(name))
+		{
 			FAIL(DNS_R_INVALIDNS);
 		}
 		CHECK(ixfr_putdata(xfr, DNS_DIFFOP_ADD, name, ttl, rdata));
@@ -680,11 +682,9 @@ redo:
 	case XFRST_AXFR_END:
 	case XFRST_IXFR_END:
 		FAIL(DNS_R_EXTRADATA);
-	/* NOTREACHED */
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	result = ISC_R_SUCCESS;
 failure:
@@ -694,10 +694,9 @@ failure:
 isc_result_t
 dns_xfrin_create(dns_zone_t *zone, dns_rdatatype_t xfrtype,
 		 const isc_sockaddr_t *primaryaddr,
-		 const isc_sockaddr_t *sourceaddr, isc_dscp_t dscp,
-		 dns_tsigkey_t *tsigkey, dns_transport_t *transport,
-		 isc_tlsctx_cache_t *tlsctx_cache, isc_mem_t *mctx,
-		 isc_nm_t *netmgr, dns_xfrindone_t done,
+		 const isc_sockaddr_t *sourceaddr, dns_tsigkey_t *tsigkey,
+		 dns_transport_t *transport, isc_tlsctx_cache_t *tlsctx_cache,
+		 isc_mem_t *mctx, isc_nm_t *netmgr, dns_xfrindone_t done,
 		 dns_xfrin_ctx_t **xfrp) {
 	dns_name_t *zonename = dns_zone_getorigin(zone);
 	dns_xfrin_ctx_t *xfr = NULL;
@@ -715,7 +714,7 @@ dns_xfrin_create(dns_zone_t *zone, dns_rdatatype_t xfrtype,
 	}
 
 	xfrin_create(mctx, zone, db, netmgr, zonename, dns_zone_getclass(zone),
-		     xfrtype, primaryaddr, sourceaddr, dscp, tsigkey, transport,
+		     xfrtype, primaryaddr, sourceaddr, tsigkey, transport,
 		     tlsctx_cache, &xfr);
 
 	if (db != NULL) {
@@ -832,7 +831,8 @@ static void
 xfrin_fail(dns_xfrin_ctx_t *xfr, isc_result_t result, const char *msg) {
 	/* Make sure only the first xfrin_fail() trumps */
 	if (atomic_compare_exchange_strong(&xfr->shuttingdown, &(bool){ false },
-					   true)) {
+					   true))
+	{
 		if (result != DNS_R_UPTODATE && result != DNS_R_TOOMANYRECORDS)
 		{
 			xfrin_log(xfr, ISC_LOG_ERROR, "%s: %s", msg,
@@ -862,9 +862,9 @@ static void
 xfrin_create(isc_mem_t *mctx, dns_zone_t *zone, dns_db_t *db, isc_nm_t *netmgr,
 	     dns_name_t *zonename, dns_rdataclass_t rdclass,
 	     dns_rdatatype_t reqtype, const isc_sockaddr_t *primaryaddr,
-	     const isc_sockaddr_t *sourceaddr, isc_dscp_t dscp,
-	     dns_tsigkey_t *tsigkey, dns_transport_t *transport,
-	     isc_tlsctx_cache_t *tlsctx_cache, dns_xfrin_ctx_t **xfrp) {
+	     const isc_sockaddr_t *sourceaddr, dns_tsigkey_t *tsigkey,
+	     dns_transport_t *transport, isc_tlsctx_cache_t *tlsctx_cache,
+	     dns_xfrin_ctx_t **xfrp) {
 	dns_xfrin_ctx_t *xfr = NULL;
 
 	xfr = isc_mem_get(mctx, sizeof(*xfr));
@@ -872,7 +872,6 @@ xfrin_create(isc_mem_t *mctx, dns_zone_t *zone, dns_db_t *db, isc_nm_t *netmgr,
 				  .shutdown_result = ISC_R_UNSET,
 				  .rdclass = rdclass,
 				  .reqtype = reqtype,
-				  .dscp = dscp,
 				  .id = (dns_messageid_t)isc_random16(),
 				  .maxrecords = dns_zone_getmaxrecords(zone),
 				  .primaryaddr = *primaryaddr,
@@ -930,11 +929,223 @@ xfrin_create(isc_mem_t *mctx, dns_zone_t *zone, dns_db_t *db, isc_nm_t *netmgr,
 }
 
 static isc_result_t
+get_create_tlsctx(const dns_xfrin_ctx_t *xfr, isc_tlsctx_t **pctx,
+		  isc_tlsctx_client_session_cache_t **psess_cache) {
+	isc_result_t result = ISC_R_FAILURE;
+	isc_tlsctx_t *tlsctx = NULL, *found = NULL;
+	isc_tls_cert_store_t *store = NULL, *found_store = NULL;
+	isc_tlsctx_client_session_cache_t *sess_cache = NULL,
+					  *found_sess_cache = NULL;
+	uint32_t tls_versions;
+	const char *ciphers = NULL;
+	bool prefer_server_ciphers;
+	const uint16_t family = isc_sockaddr_pf(&xfr->primaryaddr) == PF_INET6
+					? AF_INET6
+					: AF_INET;
+	const char *tlsname = NULL;
+
+	REQUIRE(psess_cache != NULL && *psess_cache == NULL);
+	REQUIRE(pctx != NULL && *pctx == NULL);
+
+	INSIST(xfr->transport != NULL);
+	tlsname = dns_transport_get_tlsname(xfr->transport);
+	INSIST(tlsname != NULL && *tlsname != '\0');
+
+	/*
+	 * Let's try to re-use the already created context. This way
+	 * we have a chance to resume the TLS session, bypassing the
+	 * full TLS handshake procedure, making establishing
+	 * subsequent TLS connections for XoT faster.
+	 */
+	result = isc_tlsctx_cache_find(xfr->tlsctx_cache, tlsname,
+				       isc_tlsctx_cache_tls, family, &found,
+				       &found_store, &found_sess_cache);
+	if (result != ISC_R_SUCCESS) {
+		const char *hostname =
+			dns_transport_get_remote_hostname(xfr->transport);
+		const char *ca_file = dns_transport_get_cafile(xfr->transport);
+		const char *cert_file =
+			dns_transport_get_certfile(xfr->transport);
+		const char *key_file =
+			dns_transport_get_keyfile(xfr->transport);
+		char primary_addr_str[INET6_ADDRSTRLEN] = { 0 };
+		isc_netaddr_t primary_netaddr = { 0 };
+		bool hostname_ignore_subject;
+		/*
+		 * So, no context exists. Let's create one using the
+		 * parameters from the configuration file and try to
+		 * store it for further reuse.
+		 */
+		result = isc_tlsctx_createclient(&tlsctx);
+		if (result != ISC_R_SUCCESS) {
+			goto failure;
+		}
+		tls_versions = dns_transport_get_tls_versions(xfr->transport);
+		if (tls_versions != 0) {
+			isc_tlsctx_set_protocols(tlsctx, tls_versions);
+		}
+		ciphers = dns_transport_get_ciphers(xfr->transport);
+		if (ciphers != NULL) {
+			isc_tlsctx_set_cipherlist(tlsctx, ciphers);
+		}
+
+		if (dns_transport_get_prefer_server_ciphers(
+			    xfr->transport, &prefer_server_ciphers))
+		{
+			isc_tlsctx_prefer_server_ciphers(tlsctx,
+							 prefer_server_ciphers);
+		}
+
+		if (hostname != NULL || ca_file != NULL) {
+			/*
+			 * The situation when 'found_store != NULL' while 'found
+			 * == NULL' might appear as there is one to many
+			 * relation between per transport TLS contexts and cert
+			 * stores. That is, there could be one store shared
+			 * between multiple contexts.
+			 */
+			if (found_store == NULL) {
+				/*
+				 * 'ca_file' can equal 'NULL' here, in
+				 * that case the store with system-wide
+				 * CA certificates will be created, just
+				 * as planned.
+				 */
+				result = isc_tls_cert_store_create(ca_file,
+								   &store);
+
+				if (result != ISC_R_SUCCESS) {
+					goto failure;
+				}
+			} else {
+				store = found_store;
+			}
+
+			INSIST(store != NULL);
+			if (hostname == NULL) {
+				/*
+				 * If CA bundle file is specified, but
+				 * hostname is not, then use the primary
+				 * IP address for validation, just like
+				 * dig does.
+				 */
+				INSIST(ca_file != NULL);
+				isc_netaddr_fromsockaddr(&primary_netaddr,
+							 &xfr->primaryaddr);
+				isc_netaddr_format(&primary_netaddr,
+						   primary_addr_str,
+						   sizeof(primary_addr_str));
+				hostname = primary_addr_str;
+			}
+			/*
+			 * According to RFC 8310, Subject field MUST NOT
+			 * be inspected when verifying hostname for DoT.
+			 * Only SubjectAltName must be checked.
+			 */
+			hostname_ignore_subject = true;
+			result = isc_tlsctx_enable_peer_verification(
+				tlsctx, false, store, hostname,
+				hostname_ignore_subject);
+			if (result != ISC_R_SUCCESS) {
+				goto failure;
+			}
+
+			/*
+			 * Let's load client certificate and enable
+			 * Mutual TLS. We do that only in the case when
+			 * Strict TLS is enabled, because Mutual TLS is
+			 * an extension of it.
+			 */
+			if (cert_file != NULL) {
+				INSIST(key_file != NULL);
+
+				result = isc_tlsctx_load_certificate(
+					tlsctx, key_file, cert_file);
+				if (result != ISC_R_SUCCESS) {
+					goto failure;
+				}
+			}
+		}
+
+		isc_tlsctx_enable_dot_client_alpn(tlsctx);
+
+		isc_tlsctx_client_session_cache_create(
+			xfr->mctx, tlsctx,
+			ISC_TLSCTX_CLIENT_SESSION_CACHE_DEFAULT_SIZE,
+			&sess_cache);
+
+		found_store = NULL;
+		result = isc_tlsctx_cache_add(xfr->tlsctx_cache, tlsname,
+					      isc_tlsctx_cache_tls, family,
+					      tlsctx, store, sess_cache, &found,
+					      &found_store, &found_sess_cache);
+		if (result == ISC_R_EXISTS) {
+			/*
+			 * It seems the entry has just been created from within
+			 * another thread while we were initialising
+			 * ours. Although this is unlikely, it could happen
+			 * after startup/re-initialisation. In such a case,
+			 * discard the new context and associated data and use
+			 * the already established one from now on.
+			 *
+			 * Such situation will not occur after the
+			 * initial 'warm-up', so it is not critical
+			 * performance-wise.
+			 */
+			INSIST(found != NULL);
+			isc_tlsctx_free(&tlsctx);
+			isc_tls_cert_store_free(&store);
+			isc_tlsctx_client_session_cache_detach(&sess_cache);
+			/* Let's return the data from the cache. */
+			*psess_cache = found_sess_cache;
+			*pctx = found;
+		} else {
+			/*
+			 * Adding the fresh values into the cache has been
+			 * successful, let's return them
+			 */
+			INSIST(result == ISC_R_SUCCESS);
+			*psess_cache = sess_cache;
+			*pctx = tlsctx;
+		}
+	} else {
+		/*
+		 * The cache lookup has been successful, let's return the
+		 * results.
+		 */
+		INSIST(result == ISC_R_SUCCESS);
+		*psess_cache = found_sess_cache;
+		*pctx = found;
+	}
+
+	return (ISC_R_SUCCESS);
+
+failure:
+	if (tlsctx != NULL) {
+		isc_tlsctx_free(&tlsctx);
+	}
+
+	/*
+	 * The 'found_store' is being managed by the TLS context
+	 * cache. Thus, we should keep it as it is, as it will get
+	 * destroyed alongside the cache. As there is one store per
+	 * multiple TLS contexts, we need to handle store deletion in a
+	 * special way.
+	 */
+	if (store != NULL && store != found_store) {
+		isc_tls_cert_store_free(&store);
+	}
+
+	return (result);
+}
+
+static isc_result_t
 xfrin_start(dns_xfrin_ctx_t *xfr) {
 	isc_result_t result;
 	dns_xfrin_ctx_t *connect_xfr = NULL;
 	dns_transport_type_t transport_type = DNS_TRANSPORT_TCP;
-	isc_tlsctx_t *tlsctx = NULL, *found = NULL;
+	isc_tlsctx_t *tlsctx = NULL;
+	isc_tlsctx_client_session_cache_t *sess_cache = NULL;
 
 	(void)isc_refcount_increment0(&xfr->connects);
 	dns_xfrin_attach(xfr, &connect_xfr);
@@ -954,97 +1165,22 @@ xfrin_start(dns_xfrin_ctx_t *xfr) {
 				     connect_xfr, 30000, 0);
 		break;
 	case DNS_TRANSPORT_TLS: {
-		uint32_t tls_versions;
-		const char *ciphers = NULL;
-		bool prefer_server_ciphers;
-		const uint16_t family = isc_sockaddr_pf(&xfr->primaryaddr) ==
-							PF_INET6
-						? AF_INET6
-						: AF_INET;
-		const char *tlsname = NULL;
-
-		INSIST(xfr->transport != NULL);
-		tlsname = dns_transport_get_tlsname(xfr->transport);
-		INSIST(tlsname != NULL && *tlsname != '\0');
-
-		/*
-		 * Let's try to re-use the already created context. This way
-		 * we have a chance to resume the TLS session, bypassing the
-		 * full TLS handshake procedure, making establishing
-		 * subsequent TLS connections for XoT faster.
-		 */
-		result = isc_tlsctx_cache_find(xfr->tlsctx_cache, tlsname,
-					       isc_tlsctx_cache_tls, family,
-					       &tlsctx);
+		result = get_create_tlsctx(xfr, &tlsctx, &sess_cache);
 		if (result != ISC_R_SUCCESS) {
-			/*
-			 * So, no context exists. Let's create one using the
-			 * parameters from the configuration file and try to
-			 * store it for further reuse.
-			 */
-			CHECK(isc_tlsctx_createclient(&tlsctx));
-			tls_versions =
-				dns_transport_get_tls_versions(xfr->transport);
-			if (tls_versions != 0) {
-				isc_tlsctx_set_protocols(tlsctx, tls_versions);
-			}
-			ciphers = dns_transport_get_ciphers(xfr->transport);
-			if (ciphers != NULL) {
-				isc_tlsctx_set_cipherlist(tlsctx, ciphers);
-			}
-
-			if (dns_transport_get_prefer_server_ciphers(
-				    xfr->transport, &prefer_server_ciphers))
-			{
-				isc_tlsctx_prefer_server_ciphers(
-					tlsctx, prefer_server_ciphers);
-			}
-			isc_tlsctx_enable_dot_client_alpn(tlsctx);
-
-			result = isc_tlsctx_cache_add(
-				xfr->tlsctx_cache, tlsname,
-				isc_tlsctx_cache_tls, family, tlsctx, &found);
-			if (result == ISC_R_EXISTS) {
-				/*
-				 * It seems the entry has just been created
-				 * from within another thread while we were
-				 * initialising ours. Although this is
-				 * unlikely, it could happen after
-				 * startup/re-initialisation. In such a case,
-				 * discard the new context and use the already
-				 * established one from now on.
-				 *
-				 * Such situation will not occur after the
-				 * initial 'warm-up', so it is not critical
-				 * performance-wise.
-				 */
-				INSIST(found != NULL);
-				isc_tlsctx_free(&tlsctx);
-				tlsctx = found;
-			} else {
-				INSIST(result == ISC_R_SUCCESS);
-			}
+			goto failure;
 		}
+		INSIST(tlsctx != NULL);
 		isc_nm_tlsdnsconnect(xfr->netmgr, &xfr->sourceaddr,
 				     &xfr->primaryaddr, xfrin_connect_done,
-				     connect_xfr, 30000, 0, tlsctx);
+				     connect_xfr, 30000, 0, tlsctx, sess_cache);
 	} break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	return (ISC_R_SUCCESS);
 
 failure:
-	/*
-	 * The 'found' context is being managed by the TLS context cache.
-	 * Thus, we should keep it as it is, as it will get destroyed
-	 * alongside the cache.
-	 */
-	if (tlsctx != NULL && found != tlsctx) {
-		isc_tlsctx_free(&tlsctx);
-	}
 	isc_refcount_decrement0(&xfr->connects);
 	dns_xfrin_detach(&connect_xfr);
 	return (result);
@@ -1097,9 +1233,7 @@ xfrin_connect_done(isc_nmhandle_t *handle, isc_result_t result, void *cbarg) {
 
 	CHECK(result);
 
-	if (!isc_nm_xfr_allowed(handle)) {
-		goto failure;
-	}
+	CHECK(isc_nm_xfr_checkperm(handle));
 
 	zmgr = dns_zone_getmgr(xfr->zone);
 	if (zmgr != NULL) {
@@ -1117,7 +1251,6 @@ xfrin_connect_done(isc_nmhandle_t *handle, isc_result_t result, void *cbarg) {
 	xfr->handle = handle;
 	sockaddr = isc_nmhandle_peeraddr(handle);
 	isc_sockaddr_format(&sockaddr, sourcetext, sizeof(sourcetext));
-	/* TODO	set DSCP */
 
 	if (xfr->tsigkey != NULL && xfr->tsigkey->key != NULL) {
 		dns_name_format(dst_key_name(xfr->tsigkey->key), signerbuf,
@@ -1384,17 +1517,20 @@ xfrin_recv_done(isc_nmhandle_t *handle, isc_result_t result,
 		{
 			result = dns_result_fromrcode(msg->rcode);
 		} else if (result == ISC_R_SUCCESS &&
-			   msg->opcode != dns_opcode_query) {
+			   msg->opcode != dns_opcode_query)
+		{
 			result = DNS_R_UNEXPECTEDOPCODE;
 		} else if (result == ISC_R_SUCCESS &&
-			   msg->rdclass != xfr->rdclass) {
+			   msg->rdclass != xfr->rdclass)
+		{
 			result = DNS_R_BADCLASS;
 		} else if (result == ISC_R_SUCCESS || result == DNS_R_NOERROR) {
 			result = DNS_R_UNEXPECTEDID;
 		}
 
 		if (xfr->reqtype == dns_rdatatype_axfr ||
-		    xfr->reqtype == dns_rdatatype_soa) {
+		    xfr->reqtype == dns_rdatatype_soa)
+		{
 			goto failure;
 		}
 
@@ -1485,7 +1621,8 @@ xfrin_recv_done(isc_nmhandle_t *handle, isc_result_t result,
 	}
 
 	if (xfr->reqtype == dns_rdatatype_soa &&
-	    (msg->flags & DNS_MESSAGEFLAG_AA) == 0) {
+	    (msg->flags & DNS_MESSAGEFLAG_AA) == 0)
+	{
 		FAIL(DNS_R_NOTAUTHORITATIVE);
 	}
 
@@ -1574,7 +1711,7 @@ xfrin_recv_done(isc_nmhandle_t *handle, isc_result_t result,
 		break;
 	case XFRST_AXFR_END:
 		CHECK(axfr_finalize(xfr));
-		/* FALLTHROUGH */
+		FALLTHROUGH;
 	case XFRST_IXFR_END:
 		/*
 		 * Close the journal.

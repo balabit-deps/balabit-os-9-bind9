@@ -68,7 +68,7 @@ logging { category rpz { default_debug; }; };
 
 key rndc_key {
 	secret "1234abcd8765";
-	algorithm hmac-sha256;
+	algorithm @DEFAULT_HMAC@;
 };
 controls {
 	inet 10.53.0.3 port @CONTROLPORT@ allow { any; } keys { rndc_key; };
@@ -127,4 +127,24 @@ zone "fast-expire." {
 	file "fast-expire.db";
 	primaries { 10.53.0.5; };
 	notify no;
+};
+
+zone "stub." {
+	type stub;
+	primaries { 10.53.0.2; };
+};
+
+zone "static-stub." {
+	type static-stub;
+	server-addresses { 10.53.0.2; };
+};
+
+zone "stub-nomatch." {
+	type stub;
+	primaries { 10.53.0.10; };
+};
+
+zone "static-stub-nomatch." {
+	type static-stub;
+	server-addresses { 10.53.0.10; };
 };

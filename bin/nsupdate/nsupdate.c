@@ -187,7 +187,7 @@ sendrequest(isc_sockaddr_t *destaddr, dns_message_t *msg,
 static void
 send_update(dns_name_t *zonename, isc_sockaddr_t *primary);
 
-ISC_NORETURN static void
+noreturn static void
 fatal(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
 
 static void
@@ -304,7 +304,7 @@ ddebug(const char *format, ...) {
 	}
 }
 
-static inline void
+static void
 check_result(isc_result_t result, const char *msg) {
 	if (result != ISC_R_SUCCESS) {
 		fatal("%s: %s", msg, isc_result_totext(result));
@@ -719,12 +719,6 @@ doshutdown(void) {
 		dns_message_detach(&updatemsg);
 	}
 
-	if (is_dst_up) {
-		ddebug("Destroy DST lib");
-		dst_lib_destroy();
-		is_dst_up = false;
-	}
-
 	ddebug("Destroying request manager");
 	dns_requestmgr_detach(&requestmgr);
 
@@ -866,7 +860,8 @@ setup_system(void) {
 		 */
 		ns_total = 0;
 		for (sa = ISC_LIST_HEAD(*nslist); sa != NULL;
-		     sa = ISC_LIST_NEXT(sa, link)) {
+		     sa = ISC_LIST_NEXT(sa, link))
+		{
 			switch (sa->type.sa.sa_family) {
 			case AF_INET:
 				if (have_ipv4) {
@@ -888,7 +883,8 @@ setup_system(void) {
 
 		i = 0;
 		for (sa = ISC_LIST_HEAD(*nslist); sa != NULL;
-		     sa = ISC_LIST_NEXT(sa, link)) {
+		     sa = ISC_LIST_NEXT(sa, link))
+		{
 			switch (sa->type.sa.sa_family) {
 			case AF_INET:
 				if (have_ipv4) {
@@ -1922,7 +1918,8 @@ parseclass:
 		dns_name_t *bad;
 
 		if (!dns_rdata_checkowner(name, rdata->rdclass, rdata->type,
-					  true)) {
+					  true))
+		{
 			char namebuf[DNS_NAME_FORMATSIZE];
 
 			dns_name_format(name, namebuf, sizeof(namebuf));
@@ -2188,7 +2185,8 @@ do_next_command(char *cmdline) {
 		return (evaluate_realm(cmdline));
 	}
 	if (strcasecmp(word, "check-names") == 0 ||
-	    strcasecmp(word, "checknames") == 0) {
+	    strcasecmp(word, "checknames") == 0)
+	{
 		return (evaluate_checknames(cmdline));
 	}
 	if (strcasecmp(word, "gsstsig") == 0) {
@@ -2506,11 +2504,11 @@ send_update(dns_name_t *zone, isc_sockaddr_t *primary) {
 		updatemsg->tsigname->attributes |= DNS_NAMEATTR_NOCOMPRESS;
 	}
 
-	result = dns_request_createvia(requestmgr, updatemsg, srcaddr, primary,
-				       -1, options, tsigkey, timeout,
-				       udp_timeout, udp_retries, global_task,
-				       update_completed, NULL, &request);
-	check_result(result, "dns_request_createvia");
+	result = dns_request_create(requestmgr, updatemsg, srcaddr, primary,
+				    options, tsigkey, timeout, udp_timeout,
+				    udp_retries, global_task, update_completed,
+				    NULL, &request);
+	check_result(result, "dns_request_create");
 
 	if (debugging) {
 		show_message(stdout, updatemsg, "Outgoing update query:");
@@ -2615,11 +2613,11 @@ recvsoa(isc_task_t *task, isc_event_t *event) {
 			srcaddr = localaddr4;
 		}
 
-		result = dns_request_createvia(
-			requestmgr, soaquery, srcaddr, addr, -1, 0, NULL,
-			FIND_TIMEOUT * 20, FIND_TIMEOUT, 3, global_task,
-			recvsoa, reqinfo, &request);
-		check_result(result, "dns_request_createvia");
+		result = dns_request_create(requestmgr, soaquery, srcaddr, addr,
+					    0, NULL, FIND_TIMEOUT * 20,
+					    FIND_TIMEOUT, 3, global_task,
+					    recvsoa, reqinfo, &request);
+		check_result(result, "dns_request_create");
 		requests++;
 		return;
 	}
@@ -2646,7 +2644,8 @@ recvsoa(isc_task_t *task, isc_event_t *event) {
 	}
 
 	if (rcvmsg->rcode != dns_rcode_noerror &&
-	    rcvmsg->rcode != dns_rcode_nxdomain) {
+	    rcvmsg->rcode != dns_rcode_nxdomain)
+	{
 		fatal("response to SOA query was unsuccessful");
 	}
 
@@ -2658,8 +2657,8 @@ recvsoa(isc_task_t *task, isc_event_t *event) {
 		dns_request_destroy(&request);
 		dns_message_detach(&soaquery);
 		ddebug("Out of recvsoa");
-		done_update();
 		seenerror = true;
+		done_update();
 		return;
 	}
 
@@ -2766,7 +2765,14 @@ lookforsoa:
 		primary_total = get_addresses(serverstr, dnsport,
 					      primary_servers, primary_alloc);
 		if (primary_total == 0) {
-			exit(1);
+			seenerror = true;
+			dns_rdata_freestruct(&soa);
+			dns_message_detach(&soaquery);
+			dns_request_destroy(&request);
+			dns_message_detach(&rcvmsg);
+			ddebug("Out of recvsoa");
+			done_update();
+			return;
 		}
 		primary_inuse = 0;
 	} else {
@@ -2834,11 +2840,11 @@ sendrequest(isc_sockaddr_t *destaddr, dns_message_t *msg,
 		srcaddr = localaddr4;
 	}
 
-	result = dns_request_createvia(requestmgr, msg, srcaddr, destaddr, -1,
-				       0, default_servers ? NULL : tsigkey,
-				       FIND_TIMEOUT * 20, FIND_TIMEOUT, 3,
-				       global_task, recvsoa, reqinfo, request);
-	check_result(result, "dns_request_createvia");
+	result = dns_request_create(requestmgr, msg, srcaddr, destaddr, 0,
+				    default_servers ? NULL : tsigkey,
+				    FIND_TIMEOUT * 20, FIND_TIMEOUT, 3,
+				    global_task, recvsoa, reqinfo, request);
+	check_result(result, "dns_request_create");
 	requests++;
 }
 
@@ -3036,11 +3042,10 @@ send_gssrequest(isc_sockaddr_t *destaddr, dns_message_t *msg,
 		srcaddr = localaddr4;
 	}
 
-	result = dns_request_createvia(requestmgr, msg, srcaddr, destaddr, -1,
-				       options, tsigkey, FIND_TIMEOUT * 20,
-				       FIND_TIMEOUT, 3, global_task, recvgss,
-				       reqinfo, request);
-	check_result(result, "dns_request_createvia");
+	result = dns_request_create(requestmgr, msg, srcaddr, destaddr, options,
+				    tsigkey, FIND_TIMEOUT * 20, FIND_TIMEOUT, 3,
+				    global_task, recvgss, reqinfo, request);
+	check_result(result, "dns_request_create");
 	if (debugging) {
 		show_message(stdout, msg, "Outgoing update query:");
 	}
@@ -3137,7 +3142,8 @@ recvgss(isc_task_t *task, isc_event_t *event) {
 	}
 
 	if (rcvmsg->rcode != dns_rcode_noerror &&
-	    rcvmsg->rcode != dns_rcode_nxdomain) {
+	    rcvmsg->rcode != dns_rcode_nxdomain)
+	{
 		fatal("response to GSS-TSIG query was unsuccessful");
 	}
 
@@ -3305,6 +3311,9 @@ cleanup(void) {
 	}
 	UNLOCK(&answer_lock);
 
+	ddebug("Shutting down managers");
+	isc_managers_destroy(&netmgr, &taskmgr, NULL);
+
 #if HAVE_GSSAPI
 	if (tsigkey != NULL) {
 		ddebug("detach tsigkey x%p", tsigkey);
@@ -3319,9 +3328,6 @@ cleanup(void) {
 	if (sig0key != NULL) {
 		dst_key_free(&sig0key);
 	}
-
-	ddebug("Shutting down managers");
-	isc_managers_destroy(&netmgr, &taskmgr, NULL);
 
 	ddebug("Destroying event");
 	isc_event_free(&global_event);
@@ -3356,6 +3362,12 @@ cleanup(void) {
 	isc_mem_destroy(&gmctx);
 
 	isc_mutex_destroy(&answer_lock);
+
+	if (is_dst_up) {
+		ddebug("Destroy DST lib");
+		dst_lib_destroy();
+		is_dst_up = false;
+	}
 }
 
 static void

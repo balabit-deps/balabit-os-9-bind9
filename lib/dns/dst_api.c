@@ -461,12 +461,38 @@ dst_key_tofile(const dst_key_t *key, int type, const char *directory) {
 
 void
 dst_key_setexternal(dst_key_t *key, bool value) {
+	REQUIRE(VALID_KEY(key));
+
 	key->external = value;
 }
 
 bool
 dst_key_isexternal(dst_key_t *key) {
+	REQUIRE(VALID_KEY(key));
+
 	return (key->external);
+}
+
+void
+dst_key_setmodified(dst_key_t *key, bool value) {
+	REQUIRE(VALID_KEY(key));
+
+	isc_mutex_lock(&key->mdlock);
+	key->modified = value;
+	isc_mutex_unlock(&key->mdlock);
+}
+
+bool
+dst_key_ismodified(const dst_key_t *key) {
+	bool modified;
+
+	REQUIRE(VALID_KEY(key));
+
+	isc_mutex_lock(&(((dst_key_t *)key)->mdlock));
+	modified = key->modified;
+	isc_mutex_unlock(&(((dst_key_t *)key)->mdlock));
+
+	return (modified);
 }
 
 isc_result_t
@@ -610,6 +636,7 @@ dst_key_fromnamedfile(const char *filename, const char *dirname, int type,
 	    (pubkey->key_flags & DNS_KEYFLAG_TYPEMASK) == DNS_KEYTYPE_NOKEY)
 	{
 		RETERR(computeid(pubkey));
+		pubkey->modified = false;
 		*keyp = pubkey;
 		pubkey = NULL;
 		goto out;
@@ -663,6 +690,7 @@ dst_key_fromnamedfile(const char *filename, const char *dirname, int type,
 		RETERR(DST_R_INVALIDPRIVATEKEY);
 	}
 
+	key->modified = false;
 	*keyp = key;
 	key = NULL;
 
@@ -1016,6 +1044,8 @@ dst_key_setbool(dst_key_t *key, int type, bool value) {
 	REQUIRE(type <= DST_MAX_BOOLEAN);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || !key->boolset[type] ||
+			key->bools[type] != value;
 	key->bools[type] = value;
 	key->boolset[type] = true;
 	isc_mutex_unlock(&key->mdlock);
@@ -1027,6 +1057,7 @@ dst_key_unsetbool(dst_key_t *key, int type) {
 	REQUIRE(type <= DST_MAX_BOOLEAN);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || key->boolset[type];
 	key->boolset[type] = false;
 	isc_mutex_unlock(&key->mdlock);
 }
@@ -1054,6 +1085,8 @@ dst_key_setnum(dst_key_t *key, int type, uint32_t value) {
 	REQUIRE(type <= DST_MAX_NUMERIC);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || !key->numset[type] ||
+			key->nums[type] != value;
 	key->nums[type] = value;
 	key->numset[type] = true;
 	isc_mutex_unlock(&key->mdlock);
@@ -1065,6 +1098,7 @@ dst_key_unsetnum(dst_key_t *key, int type) {
 	REQUIRE(type <= DST_MAX_NUMERIC);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || key->numset[type];
 	key->numset[type] = false;
 	isc_mutex_unlock(&key->mdlock);
 }
@@ -1091,6 +1125,8 @@ dst_key_settime(dst_key_t *key, int type, isc_stdtime_t when) {
 	REQUIRE(type <= DST_MAX_TIMES);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || !key->timeset[type] ||
+			key->times[type] != when;
 	key->times[type] = when;
 	key->timeset[type] = true;
 	isc_mutex_unlock(&key->mdlock);
@@ -1102,6 +1138,7 @@ dst_key_unsettime(dst_key_t *key, int type) {
 	REQUIRE(type <= DST_MAX_TIMES);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || key->timeset[type];
 	key->timeset[type] = false;
 	isc_mutex_unlock(&key->mdlock);
 }
@@ -1129,6 +1166,8 @@ dst_key_setstate(dst_key_t *key, int type, dst_key_state_t state) {
 	REQUIRE(type <= DST_MAX_KEYSTATES);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || !key->keystateset[type] ||
+			key->keystates[type] != state;
 	key->keystates[type] = state;
 	key->keystateset[type] = true;
 	isc_mutex_unlock(&key->mdlock);
@@ -1140,6 +1179,7 @@ dst_key_unsetstate(dst_key_t *key, int type) {
 	REQUIRE(type <= DST_MAX_KEYSTATES);
 
 	isc_mutex_lock(&key->mdlock);
+	key->modified = key->modified || key->keystateset[type];
 	key->keystateset[type] = false;
 	isc_mutex_unlock(&key->mdlock);
 }
@@ -1187,7 +1227,8 @@ comparekeys(const dst_key_t *key1, const dst_key_t *key2,
 			return (false);
 		}
 		if (key1->key_id != key2->key_rid &&
-		    key1->key_rid != key2->key_id) {
+		    key1->key_rid != key2->key_id)
+		{
 			return (false);
 		}
 	}
@@ -2211,7 +2252,8 @@ buildfilename(dns_name_t *name, dns_keytag_t id, unsigned int alg,
 		}
 		isc_buffer_putstr(out, directory);
 		if (strlen(directory) > 0U &&
-		    directory[strlen(directory) - 1] != '/') {
+		    directory[strlen(directory) - 1] != '/')
+		{
 			isc_buffer_putstr(out, "/");
 		}
 	}
@@ -2703,5 +2745,27 @@ dst_key_copy_metadata(dst_key_t *to, dst_key_t *from) {
 		} else {
 			dst_key_unsetstate(to, i);
 		}
+	}
+
+	dst_key_setmodified(to, dst_key_ismodified(from));
+}
+
+const char *
+dst_hmac_algorithm_totext(dst_algorithm_t alg) {
+	switch (alg) {
+	case DST_ALG_HMACMD5:
+		return ("hmac-md5");
+	case DST_ALG_HMACSHA1:
+		return ("hmac-sha1");
+	case DST_ALG_HMACSHA224:
+		return ("hmac-sha224");
+	case DST_ALG_HMACSHA256:
+		return ("hmac-sha256");
+	case DST_ALG_HMACSHA384:
+		return ("hmac-sha384");
+	case DST_ALG_HMACSHA512:
+		return ("hmac-sha512");
+	default:
+		return ("unknown");
 	}
 }

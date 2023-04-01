@@ -33,8 +33,8 @@ resolution_fails() {
 	_servfail=0
 	_timeout=0
 	$DIG $DIGOPTS +tcp +tries=3 +time=5 @10.53.0.1 ${1} TXT > dig.out.test$n
-	grep "status: SERVFAIL" dig.out.test$n > /dev/null && _servfail=1
-	grep "connection timed out" dig.out.test$n > /dev/null && _timeout=1
+	grep -F "status: SERVFAIL" dig.out.test$n > /dev/null && _servfail=1
+	grep -F "timed out" dig.out.test$n > /dev/null && _timeout=1
 	if [ $_servfail -eq 1 ] || [ $_timeout -eq 1 ]; then
 		return 0
 	else
@@ -106,7 +106,8 @@ n=`expr $n + 1`
 echo_i "checking drop edns server setup ($n)"
 ret=0
 $DIG $DIGOPTS +edns @10.53.0.2 dropedns soa > dig.out.1.test$n && ret=1
-grep "connection timed out; no servers could be reached" dig.out.1.test$n > /dev/null || ret=1
+grep "timed out" dig.out.1.test$n > /dev/null || ret=1
+grep ";; no servers could be reached" dig.out.1.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +noedns @10.53.0.2 dropedns soa > dig.out.2.test$n || ret=1
 grep "status: NOERROR" dig.out.2.test$n > /dev/null || ret=1
 grep "EDNS: version:" dig.out.2.test$n > /dev/null && ret=1
@@ -114,7 +115,8 @@ $DIG $DIGOPTS +noedns +tcp @10.53.0.2 dropedns soa > dig.out.3.test$n || ret=1
 grep "status: NOERROR" dig.out.3.test$n > /dev/null || ret=1
 grep "EDNS: version:" dig.out.3.test$n > /dev/null && ret=1
 $DIG $DIGOPTS +edns +tcp @10.53.0.2 dropedns soa > dig.out.4.test$n && ret=1
-grep "connection timed out; no servers could be reached" dig.out.4.test$n > /dev/null || ret=1
+grep "timed out" dig.out.4.test$n > /dev/null || ret=1
+grep ";; no servers could be reached" dig.out.4.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
@@ -129,7 +131,8 @@ n=`expr $n + 1`
 echo_i "checking drop edns + no tcp server setup ($n)"
 ret=0
 $DIG $DIGOPTS +edns @10.53.0.3 dropedns-notcp soa > dig.out.1.test$n && ret=1
-grep "connection timed out; no servers could be reached" dig.out.1.test$n > /dev/null || ret=1
+grep "timed out" dig.out.1.test$n > /dev/null || ret=1
+grep ";; no servers could be reached" dig.out.1.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +noedns +tcp @10.53.0.3 dropedns-notcp soa > dig.out.2.test$n && ret=1
 grep "connection refused" dig.out.2.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +noedns @10.53.0.3 dropedns-notcp soa > dig.out.3.test$n || ret=1
@@ -192,7 +195,8 @@ $DIG $DIGOPTS +edns +tcp @10.53.0.6 edns512 txt > dig.out.2.test$n || ret=1
 grep "status: NOERROR" dig.out.2.test$n > /dev/null || ret=1
 grep "EDNS: version:" dig.out.2.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +edns +dnssec @10.53.0.6 edns512 txt > dig.out.3.test$n && ret=1
-grep "connection timed out; no servers could be reached" dig.out.3.test$n > /dev/null || ret=1
+grep "timed out" dig.out.3.test$n > /dev/null || ret=1
+grep ";; no servers could be reached" dig.out.3.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +edns +dnssec +bufsize=512 +ignore @10.53.0.6 edns512 soa > dig.out.4.test$n || ret=1
 grep "status: NOERROR" dig.out.4.test$n > /dev/null || ret=1
 grep "EDNS: version:" dig.out.4.test$n > /dev/null || ret=1
@@ -216,7 +220,8 @@ grep "EDNS: version:" dig.out.1.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +edns +tcp @10.53.0.7 edns512-notcp soa > dig.out.2.test$n && ret=1
 grep "connection refused" dig.out.2.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +edns +dnssec @10.53.0.7 edns512-notcp soa > dig.out.3.test$n && ret=1
-grep "connection timed out; no servers could be reached" dig.out.3.test$n > /dev/null || ret=1
+grep "timed out" dig.out.3.test$n > /dev/null || ret=1
+grep ";; no servers could be reached" dig.out.3.test$n > /dev/null || ret=1
 $DIG $DIGOPTS +edns +dnssec +bufsize=512 +ignore @10.53.0.7 edns512-notcp soa > dig.out.4.test$n || ret=1
 grep "status: NOERROR" dig.out.4.test$n > /dev/null || ret=1
 grep "EDNS: version:" dig.out.4.test$n > /dev/null || ret=1
@@ -242,9 +247,9 @@ fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=`expr $status + $ret`
 
-$PERL ../stop.pl --use-rndc --port ${CONTROLPORT} legacy ns1
+stop_server --use-rndc --port ${CONTROLPORT} ns1
 copy_setports ns1/named2.conf.in ns1/named.conf
-start_server --noclean --restart --port ${PORT} legacy ns1
+start_server --noclean --restart --port ${PORT} ns1
 
 n=`expr $n + 1`
 echo_i "checking recursive lookup to edns 512 + no tcp + trust anchor fails ($n)"

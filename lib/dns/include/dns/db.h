@@ -77,11 +77,11 @@ extern unsigned int dns_pps;
 typedef struct dns_dbmethods {
 	void (*attach)(dns_db_t *source, dns_db_t **targetp);
 	void (*detach)(dns_db_t **dbp);
-	isc_result_t (*beginload)(dns_db_t		   *db,
+	isc_result_t (*beginload)(dns_db_t	       *db,
 				  dns_rdatacallbacks_t *callbacks);
 	isc_result_t (*endload)(dns_db_t *db, dns_rdatacallbacks_t *callbacks);
 	isc_result_t (*dump)(dns_db_t *db, dns_dbversion_t *version,
-			     const char	*filename,
+			     const char	       *filename,
 			     dns_masterformat_t masterformat);
 	void (*currentversion)(dns_db_t *db, dns_dbversion_t **versionp);
 	isc_result_t (*newversion)(dns_db_t *db, dns_dbversion_t **versionp);
@@ -100,7 +100,7 @@ typedef struct dns_dbmethods {
 	isc_result_t (*findzonecut)(dns_db_t *db, const dns_name_t *name,
 				    unsigned int options, isc_stdtime_t now,
 				    dns_dbnode_t **nodep, dns_name_t *foundname,
-				    dns_name_t     *dcname,
+				    dns_name_t	   *dcname,
 				    dns_rdataset_t *rdataset,
 				    dns_rdataset_t *sigrdataset);
 	void (*attachnode)(dns_db_t *db, dns_dbnode_t *source,
@@ -118,8 +118,8 @@ typedef struct dns_dbmethods {
 				     dns_rdataset_t *rdataset,
 				     dns_rdataset_t *sigrdataset);
 	isc_result_t (*allrdatasets)(dns_db_t *db, dns_dbnode_t *node,
-				     dns_dbversion_t     *version,
-				     isc_stdtime_t	  now,
+				     dns_dbversion_t *version,
+				     unsigned int options, isc_stdtime_t now,
 				     dns_rdatasetiter_t **iteratorp);
 	isc_result_t (*addrdataset)(dns_db_t *db, dns_dbnode_t *node,
 				    dns_dbversion_t *version, isc_stdtime_t now,
@@ -128,9 +128,9 @@ typedef struct dns_dbmethods {
 				    dns_rdataset_t *addedrdataset);
 	isc_result_t (*subtractrdataset)(dns_db_t *db, dns_dbnode_t *node,
 					 dns_dbversion_t *version,
-					 dns_rdataset_t	*rdataset,
+					 dns_rdataset_t	 *rdataset,
 					 unsigned int	  options,
-					 dns_rdataset_t	*newrdataset);
+					 dns_rdataset_t	 *newrdataset);
 	isc_result_t (*deleterdataset)(dns_db_t *db, dns_dbnode_t *node,
 				       dns_dbversion_t *version,
 				       dns_rdatatype_t	type,
@@ -143,12 +143,12 @@ typedef struct dns_dbmethods {
 	isc_result_t (*getoriginnode)(dns_db_t *db, dns_dbnode_t **nodep);
 	void (*transfernode)(dns_db_t *db, dns_dbnode_t **sourcep,
 			     dns_dbnode_t **targetp);
-	isc_result_t (*getnsec3parameters)(dns_db_t	    *db,
+	isc_result_t (*getnsec3parameters)(dns_db_t	   *db,
 					   dns_dbversion_t *version,
 					   dns_hash_t *hash, uint8_t *flags,
-					   uint16_t	    *iterations,
+					   uint16_t	 *iterations,
 					   unsigned char *salt,
-					   size_t	  *salt_len);
+					   size_t	 *salt_len);
 	isc_result_t (*findnsec3node)(dns_db_t *db, const dns_name_t *name,
 				      bool create, dns_dbnode_t **nodep);
 	isc_result_t (*setsigningtime)(dns_db_t *db, dns_rdataset_t *rdataset,
@@ -164,16 +164,16 @@ typedef struct dns_dbmethods {
 	isc_result_t (*findnodeext)(dns_db_t *db, const dns_name_t *name,
 				    bool		     create,
 				    dns_clientinfomethods_t *methods,
-				    dns_clientinfo_t	     *clientinfo,
-				    dns_dbnode_t		 **nodep);
+				    dns_clientinfo_t	    *clientinfo,
+				    dns_dbnode_t	   **nodep);
 	isc_result_t (*findext)(dns_db_t *db, const dns_name_t *name,
 				dns_dbversion_t *version, dns_rdatatype_t type,
 				unsigned int options, isc_stdtime_t now,
 				dns_dbnode_t **nodep, dns_name_t *foundname,
 				dns_clientinfomethods_t *methods,
-				dns_clientinfo_t	 *clientinfo,
-				dns_rdataset_t	       *rdataset,
-				dns_rdataset_t	       *sigrdataset);
+				dns_clientinfo_t	*clientinfo,
+				dns_rdataset_t		*rdataset,
+				dns_rdataset_t		*sigrdataset);
 	isc_result_t (*setcachestats)(dns_db_t *db, isc_stats_t *stats);
 	size_t (*hashsize)(dns_db_t *db);
 	isc_result_t (*nodefullname)(dns_db_t *db, dns_dbnode_t *node,
@@ -187,7 +187,7 @@ typedef struct dns_dbmethods {
 	isc_result_t (*setgluecachestats)(dns_db_t *db, isc_stats_t *stats);
 } dns_dbmethods_t;
 
-typedef isc_result_t (*dns_dbcreatefunc_t)(isc_mem_t	     *mctx,
+typedef isc_result_t (*dns_dbcreatefunc_t)(isc_mem_t	    *mctx,
 					   const dns_name_t *name,
 					   dns_dbtype_t	     type,
 					   dns_rdataclass_t  rdclass,
@@ -215,7 +215,7 @@ struct dns_db {
 	uint16_t	 attributes;
 	dns_rdataclass_t rdclass;
 	dns_name_t	 origin;
-	isc_mem_t	  *mctx;
+	isc_mem_t	*mctx;
 	ISC_LIST(dns_dbonupdatelistener_t) update_listeners;
 };
 
@@ -224,7 +224,7 @@ struct dns_db {
 
 struct dns_dbonupdatelistener {
 	dns_dbupdate_callback_t onupdate;
-	void		     *onupdate_arg;
+	void		       *onupdate_arg;
 	ISC_LINK(dns_dbonupdatelistener_t) link;
 };
 
@@ -301,6 +301,9 @@ struct dns_dbonupdatelistener {
 #define DNS_DB_NSEC3ONLY     0x2
 #define DNS_DB_NONSEC3	     0x4
 /*@}*/
+
+#define DNS_DB_STALEOK	 0x01
+#define DNS_DB_EXPIREDOK 0x02
 
 /*****
 ***** Methods
@@ -1156,7 +1159,8 @@ dns_db_findrdataset(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
 
 isc_result_t
 dns_db_allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
-		    isc_stdtime_t now, dns_rdatasetiter_t **iteratorp);
+		    unsigned int options, isc_stdtime_t now,
+		    dns_rdatasetiter_t **iteratorp);
 /*%<
  * Make '*iteratorp' an rdataset iterator for all rdatasets at 'node' in
  * version 'version' of 'db'.
@@ -1164,6 +1168,12 @@ dns_db_allrdatasets(dns_db_t *db, dns_dbnode_t *node, dns_dbversion_t *version,
  * Notes:
  *
  * \li	If 'version' is NULL, then the current version will be used.
+ *
+ * \li	'options' controls which rdatasets are selected when interating over
+ *	the node.
+ *	'DNS_DB_STALEOK' return stale rdatasets as well as current rdatasets.
+ *	'DNS_DB_EXPIREDOK' return expired rdatasets as well as current
+ *	rdatasets.
  *
  * \li	The 'now' field is ignored if 'db' is a zone database.  If 'db' is a
  *	cache database, an rdataset will not be found unless it expires after
@@ -1634,11 +1644,11 @@ dns_db_updatenotify_register(dns_db_t *db, dns_dbupdate_callback_t fn,
 			     void *fn_arg);
 /*%<
  * Register a notify-on-update callback function to a database.
+ * Duplicate callbacks are suppressed.
  *
  * Requires:
  *
  * \li	'db' is a valid database
- * \li	'db' does not have an update callback registered
  * \li	'fn' is not NULL
  *
  */

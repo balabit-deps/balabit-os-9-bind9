@@ -329,7 +329,8 @@ dns_tsigkey_createfromkey(const dns_name_t *name, const dns_name_t *algorithm,
 	 * Ignore this if it's a GSS key, since the key size is meaningless.
 	 */
 	if (dstkey != NULL && dst_key_size(dstkey) < 64 &&
-	    dstalg != DST_ALG_GSSAPI) {
+	    dstalg != DST_ALG_GSSAPI)
+	{
 		char namestr[DNS_NAME_FORMATSIZE];
 		dns_name_format(name, namestr, sizeof(namestr));
 		isc_log_write(dns_lctx, DNS_LOGCATEGORY_DNSSEC,
@@ -795,7 +796,12 @@ dns_tsig_sign(dns_message_t *msg) {
 	dns_name_init(&tsig.algorithm, NULL);
 	dns_name_clone(key->algorithm, &tsig.algorithm);
 
-	isc_stdtime_get(&now);
+	if (msg->fuzzing) {
+		now = msg->fuzztime;
+	} else {
+		isc_stdtime_get(&now);
+	}
+
 	tsig.timesigned = now + msg->timeadjust;
 	tsig.fudge = DNS_TSIG_FUDGE;
 
@@ -866,7 +872,8 @@ dns_tsig_sign(dns_message_t *msg) {
 			}
 			isc_buffer_putuint16(&databuf, querytsig.siglen);
 			if (isc_buffer_availablelength(&databuf) <
-			    querytsig.siglen) {
+			    querytsig.siglen)
+			{
 				ret = ISC_R_NOSPACE;
 				goto cleanup_context;
 			}
@@ -1145,18 +1152,6 @@ dns_tsig_verify(isc_buffer_t *source, dns_message_t *msg,
 			return (ret);
 		}
 	}
-#if defined(__clang__) && (__clang_major__ < 3 ||                           \
-			   (__clang_major__ == 3 && __clang_minor__ < 2) || \
-			   (__clang_major__ == 4 && __clang_minor__ < 2))
-	/* false positive: http://llvm.org/bugs/show_bug.cgi?id=14461 */
-	else
-	{
-		memset(&querytsig, 0, sizeof(querytsig));
-	}
-#endif /* if defined(__clang__) && (__clang_major__ < 3 || (__clang_major__ == \
-	* 3                                                                    \
-	* && __clang_minor__ < 2) || (__clang_major__ == 4 && __clang_minor__  \
-	* < 2)) */
 
 	/*
 	 * Do the key name and algorithm match that of the query?
@@ -1174,7 +1169,11 @@ dns_tsig_verify(isc_buffer_t *source, dns_message_t *msg,
 	/*
 	 * Get the current time.
 	 */
-	isc_stdtime_get(&now);
+	if (msg->fuzzing) {
+		now = msg->fuzztime;
+	} else {
+		isc_stdtime_get(&now);
+	}
 
 	/*
 	 * Find dns_tsigkey_t based on keyname.
@@ -1219,7 +1218,8 @@ dns_tsig_verify(isc_buffer_t *source, dns_message_t *msg,
 			return (DNS_R_FORMERR);
 		}
 		if (tsig.siglen > 0 &&
-		    (tsig.siglen < 10 || tsig.siglen < ((siglen + 1) / 2))) {
+		    (tsig.siglen < 10 || tsig.siglen < ((siglen + 1) / 2)))
+		{
 			tsig_log(msg->tsigkey, 2,
 				 "signature length below minimum");
 			return (DNS_R_FORMERR);
@@ -1388,7 +1388,8 @@ dns_tsig_verify(isc_buffer_t *source, dns_message_t *msg,
 		uint16_t digestbits = dst_key_getbits(key);
 
 		if (tsig.siglen > 0 && digestbits != 0 &&
-		    tsig.siglen < ((digestbits + 7) / 8)) {
+		    tsig.siglen < ((digestbits + 7) / 8))
+		{
 			msg->tsigstatus = dns_tsigerror_badtrunc;
 			tsig_log(msg->tsigkey, 2,
 				 "truncated signature length too small");
@@ -1523,7 +1524,8 @@ tsig_verify_tcp(isc_buffer_t *source, dns_message_t *msg) {
 			}
 			if (tsig.siglen > 0 &&
 			    (tsig.siglen < 10 ||
-			     tsig.siglen < ((siglen + 1) / 2))) {
+			     tsig.siglen < ((siglen + 1) / 2)))
+			{
 				tsig_log(tsigkey, 2,
 					 "signature length below minimum");
 				ret = DNS_R_FORMERR;
@@ -1667,7 +1669,11 @@ tsig_verify_tcp(isc_buffer_t *source, dns_message_t *msg) {
 		/*
 		 * Is the time ok?
 		 */
-		isc_stdtime_get(&now);
+		if (msg->fuzzing) {
+			now = msg->fuzztime;
+		} else {
+			isc_stdtime_get(&now);
+		}
 
 		if (now + msg->timeadjust > tsig.timesigned + tsig.fudge) {
 			msg->tsigstatus = dns_tsigerror_badtime;
@@ -1691,7 +1697,8 @@ tsig_verify_tcp(isc_buffer_t *source, dns_message_t *msg) {
 			uint16_t digestbits = dst_key_getbits(key);
 
 			if (tsig.siglen > 0 && digestbits != 0 &&
-			    tsig.siglen < ((digestbits + 7) / 8)) {
+			    tsig.siglen < ((digestbits + 7) / 8))
+			{
 				msg->tsigstatus = dns_tsigerror_badtrunc;
 				tsig_log(msg->tsigkey, 2,
 					 "truncated signature length "
@@ -1700,7 +1707,8 @@ tsig_verify_tcp(isc_buffer_t *source, dns_message_t *msg) {
 				goto cleanup_context;
 			}
 			if (tsig.siglen > 0 && digestbits == 0 &&
-			    tsig.siglen < siglen) {
+			    tsig.siglen < siglen)
+			{
 				msg->tsigstatus = dns_tsigerror_badtrunc;
 				tsig_log(msg->tsigkey, 2,
 					 "signature length too small");

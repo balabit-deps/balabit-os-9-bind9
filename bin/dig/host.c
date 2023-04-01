@@ -101,7 +101,7 @@ rcode_totext(dns_rcode_t rcode) {
 	return (totext.deconsttext);
 }
 
-ISC_NORETURN static void
+noreturn static void
 show_usage(void);
 
 static void
@@ -211,15 +211,9 @@ printsection(dns_message_t *msg, dns_section_t sectionid,
 	isc_result_t result, loopresult;
 	isc_region_t r;
 	dns_name_t empty_name;
-	char tbuf[4096];
+	char tbuf[4096] = { 0 };
 	bool first;
-	bool no_rdata;
-
-	if (sectionid == DNS_SECTION_QUESTION) {
-		no_rdata = true;
-	} else {
-		no_rdata = false;
-	}
+	bool no_rdata = (sectionid == DNS_SECTION_QUESTION);
 
 	if (headers) {
 		printf(";; %s SECTION:\n", section_name);
@@ -539,7 +533,8 @@ printmessage(dig_query_t *query, const isc_buffer_t *msgbuf, dns_message_t *msg,
 	}
 
 	if (!ISC_LIST_EMPTY(msg->sections[DNS_SECTION_AUTHORITY]) &&
-	    !short_form) {
+	    !short_form)
+	{
 		printf("\n");
 		result = printsection(msg, DNS_SECTION_AUTHORITY, "AUTHORITY",
 				      true, query);
@@ -548,7 +543,8 @@ printmessage(dig_query_t *query, const isc_buffer_t *msgbuf, dns_message_t *msg,
 		}
 	}
 	if (!ISC_LIST_EMPTY(msg->sections[DNS_SECTION_ADDITIONAL]) &&
-	    !short_form) {
+	    !short_form)
+	{
 		printf("\n");
 		result = printsection(msg, DNS_SECTION_ADDITIONAL, "ADDITIONAL",
 				      true, query);
@@ -602,10 +598,12 @@ pre_parse_args(int argc, char **argv) {
 			{
 				isc_mem_debugging |= ISC_MEM_DEBUGTRACE;
 			} else if (strcasecmp("record",
-					      isc_commandline_argument) == 0) {
+					      isc_commandline_argument) == 0)
+			{
 				isc_mem_debugging |= ISC_MEM_DEBUGRECORD;
 			} else if (strcasecmp("usage",
-					      isc_commandline_argument) == 0) {
+					      isc_commandline_argument) == 0)
+			{
 				isc_mem_debugging |= ISC_MEM_DEBUGUSAGE;
 			}
 			break;
@@ -716,7 +714,8 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 			break;
 		case 't':
 			if (strncasecmp(isc_commandline_argument, "ixfr=", 5) ==
-			    0) {
+			    0)
+			{
 				rdtype = dns_rdatatype_ixfr;
 				/* XXXMPA add error checking */
 				serial = strtoul(isc_commandline_argument + 5,
@@ -735,7 +734,8 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 				      isc_commandline_argument);
 			}
 			if (!lookup->rdtypeset ||
-			    lookup->rdtype != dns_rdatatype_axfr) {
+			    lookup->rdtype != dns_rdatatype_axfr)
+			{
 				lookup->rdtype = rdtype;
 			}
 			lookup->rdtypeset = true;
@@ -776,10 +776,11 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 			break;
 		case 'A':
 			list_almost_all = true;
-		/* FALL THROUGH */
+			FALLTHROUGH;
 		case 'a':
 			if (!lookup->rdtypeset ||
-			    lookup->rdtype != dns_rdatatype_axfr) {
+			    lookup->rdtype != dns_rdatatype_axfr)
+			{
 				lookup->rdtype = dns_rdatatype_any;
 			}
 			list_type = dns_rdatatype_any;
@@ -853,6 +854,7 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 			break;
 		case 'p':
 			port = atoi(isc_commandline_argument);
+			port_set = true;
 			break;
 		}
 	}

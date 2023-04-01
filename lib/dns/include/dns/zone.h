@@ -29,6 +29,7 @@
 #include <isc/tls.h>
 
 #include <dns/catz.h>
+#include <dns/diff.h>
 #include <dns/master.h>
 #include <dns/masterdump.h>
 #include <dns/rdatastruct.h>
@@ -706,8 +707,8 @@ dns_zone_setparentals(dns_zone_t *zone, const isc_sockaddr_t *parentals,
 
 void
 dns_zone_setalsonotify(dns_zone_t *zone, const isc_sockaddr_t *notify,
-		       const isc_dscp_t *dscps, dns_name_t **keynames,
-		       dns_name_t **tlsnames, uint32_t count);
+		       dns_name_t **keynames, dns_name_t **tlsnames,
+		       uint32_t count);
 /*%<
  *	Set the list of additional servers to be notified when
  *	a zone changes.	 To clear the list use 'count = 0'.
@@ -858,31 +859,6 @@ dns_zone_getaltxfrsource4(dns_zone_t *zone);
  */
 
 isc_result_t
-dns_zone_setxfrsource4dscp(dns_zone_t *zone, isc_dscp_t dscp);
-isc_result_t
-dns_zone_setaltxfrsource4dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the transfer/alt-transfer source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
- */
-
-isc_dscp_t
-dns_zone_getxfrsource4dscp(dns_zone_t *zone);
-isc_dscp_t
-dns_zone_getaltxfrsource4dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the transfer/alt-transfer source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
 dns_zone_setxfrsource6(dns_zone_t *zone, const isc_sockaddr_t *xfrsource);
 isc_result_t
 dns_zone_setaltxfrsource6(dns_zone_t *zone, const isc_sockaddr_t *xfrsource);
@@ -909,31 +885,6 @@ dns_zone_getaltxfrsource6(dns_zone_t *zone);
  *\li	'zone' to be a valid zone.
  */
 
-isc_dscp_t
-dns_zone_getxfrsource6dscp(dns_zone_t *zone);
-isc_dscp_t
-dns_zone_getaltxfrsource6dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the transfer/alt-transfer source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
-dns_zone_setxfrsource6dscp(dns_zone_t *zone, isc_dscp_t dscp);
-isc_result_t
-dns_zone_setaltxfrsource6dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the transfer/alt-transfer source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
- */
-
 isc_result_t
 dns_zone_setparentalsrc4(dns_zone_t *zone, const isc_sockaddr_t *parentalsrc);
 /*%<
@@ -955,27 +906,6 @@ dns_zone_getparentalsrc4(dns_zone_t *zone);
  *
  * Require:
  *\li	'zone' to be a valid zone.
- */
-
-isc_dscp_t
-dns_zone_getparentalsrc4dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the IPv4 parental source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
-dns_zone_setparentalsrc4dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the IPv4 parental source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
  */
 
 isc_result_t
@@ -1001,27 +931,6 @@ dns_zone_getparentalsrc6(dns_zone_t *zone);
  *\li	'zone' to be a valid zone.
  */
 
-isc_dscp_t
-dns_zone_getparentalsrc6dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the IPv6 parental source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
-dns_zone_setparentalsrc6dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the IPv6 parental source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
- */
-
 isc_result_t
 dns_zone_setnotifysrc4(dns_zone_t *zone, const isc_sockaddr_t *notifysrc);
 /*%<
@@ -1045,27 +954,6 @@ dns_zone_getnotifysrc4(dns_zone_t *zone);
  *\li	'zone' to be a valid zone.
  */
 
-isc_dscp_t
-dns_zone_getnotifysrc4dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the IPv4 notify source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
-dns_zone_setnotifysrc4dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the IPv4 notify source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
- */
-
 isc_result_t
 dns_zone_setnotifysrc6(dns_zone_t *zone, const isc_sockaddr_t *notifysrc);
 /*%<
@@ -1087,27 +975,6 @@ dns_zone_getnotifysrc6(dns_zone_t *zone);
  *
  * Require:
  *\li	'zone' to be a valid zone.
- */
-
-isc_dscp_t
-dns_zone_getnotifysrc6dscp(dns_zone_t *zone);
-/*%/
- * Get the DSCP value associated with the IPv6 notify source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- */
-
-isc_result_t
-dns_zone_setnotifysrc6dscp(dns_zone_t *zone, isc_dscp_t dscp);
-/*%<
- * Set the DSCP value associated with the IPv6 notify source.
- *
- * Require:
- *\li	'zone' to be a valid zone.
- *
- * Returns:
- *\li	#ISC_R_SUCCESS
  */
 
 void
@@ -2072,7 +1939,7 @@ dns_zonemgr_unreachabledel(dns_zonemgr_t *zmgr, isc_sockaddr_t *remote,
  */
 
 void
-dns_zonemgr_set_tlsctx_cache(dns_zonemgr_t	   *zmgr,
+dns_zonemgr_set_tlsctx_cache(dns_zonemgr_t	*zmgr,
 			     isc_tlsctx_cache_t *tlsctx_cache);
 /*%<
  *	Set the TLS client context cache used for zone transfers via
@@ -2653,7 +2520,8 @@ dns_zone_catz_enable(dns_zone_t *zone, dns_catz_zones_t *catzs);
 void
 dns_zone_catz_disable(dns_zone_t *zone);
 /*%<
- * Disable zone as catalog zone, if it is one.
+ * Disable zone as catalog zone, if it is one.  Also disables any
+ * registered callbacks for the catalog zone.
  *
  * Requires:
  *
@@ -2763,4 +2631,21 @@ const char *
 dns_zonetype_name(dns_zonetype_t type);
 /*%<
  * Return the name of the zone type 'type'.
+ */
+
+bool
+dns_zone_check_dnskey_nsec3(dns_zone_t *zone, dns_db_t *db,
+			    dns_dbversion_t *ver, dns_diff_t *diff,
+			    dst_key_t **keys, unsigned int numkeys);
+/**<
+ * Return whether the zone would enter an inconsistent state where NSEC only
+ * DNSKEYs are present along NSEC3 chains.
+ *
+ * Requires:
+ * \li	'zone' to be a valid zone.
+ * \li	'db'is not NULL.
+ *
+ * Returns:
+ * \li	'true' if the check passes, that is the zone remains consistent,
+ *	'false' if the zone would have NSEC only DNSKEYs and an NSEC3 chain.
  */

@@ -54,7 +54,9 @@ ns_server_create(isc_mem_t *mctx, ns_matchview_t matchingview,
 	isc_quota_init(&sctx->xfroutquota, 10);
 	isc_quota_init(&sctx->tcpquota, 10);
 	isc_quota_init(&sctx->recursionquota, 100);
+	isc_quota_init(&sctx->updquota, 100);
 	ISC_LIST_INIT(sctx->http_quotas);
+	isc_mutex_init(&sctx->http_quotas_lock);
 
 	CHECKFATAL(dns_tkeyctx_create(mctx, &sctx->tkeyctx));
 
@@ -135,6 +137,7 @@ ns_server_detach(ns_server_t **sctxp) {
 			isc_mem_put(sctx->mctx, altsecret, sizeof(*altsecret));
 		}
 
+		isc_quota_destroy(&sctx->updquota);
 		isc_quota_destroy(&sctx->recursionquota);
 		isc_quota_destroy(&sctx->tcpquota);
 		isc_quota_destroy(&sctx->xfroutquota);
@@ -150,6 +153,7 @@ ns_server_detach(ns_server_t **sctxp) {
 				    sizeof(*http_quota));
 			http_quota = next;
 		}
+		isc_mutex_destroy(&sctx->http_quotas_lock);
 
 		if (sctx->server_id != NULL) {
 			isc_mem_free(sctx->mctx, sctx->server_id);
@@ -242,4 +246,15 @@ ns_server_getoption(ns_server_t *sctx, unsigned int option) {
 	REQUIRE(SCTX_VALID(sctx));
 
 	return ((sctx->options & option) != 0);
+}
+
+void
+ns_server_append_http_quota(ns_server_t *sctx, isc_quota_t *http_quota) {
+	REQUIRE(SCTX_VALID(sctx));
+	REQUIRE(http_quota != NULL);
+
+	LOCK(&sctx->http_quotas_lock);
+	ISC_LINK_INIT(http_quota, link);
+	ISC_LIST_APPEND(sctx->http_quotas, http_quota, link);
+	UNLOCK(&sctx->http_quotas_lock);
 }

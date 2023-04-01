@@ -410,7 +410,7 @@ dns_rdataslab_count(unsigned char *slab, unsigned int reservelen) {
  * 'type' and class 'rdclass', and advance '*current' to
  * point to the next item in the slab.
  */
-static inline void
+static void
 rdata_from_slab(unsigned char **current, dns_rdataclass_t rdclass,
 		dns_rdatatype_t type, dns_rdata_t *rdata) {
 	unsigned char *tcurrent = *current;
@@ -446,7 +446,7 @@ rdata_from_slab(unsigned char **current, dns_rdataclass_t rdclass,
  * contains an rdata identical to 'rdata'.  This does case insensitive
  * comparisons per DNSSEC.
  */
-static inline bool
+static bool
 rdata_in_slab(unsigned char *slab, unsigned int reservelen,
 	      dns_rdataclass_t rdclass, dns_rdatatype_t type,
 	      dns_rdata_t *rdata) {
@@ -953,7 +953,8 @@ dns_rdataslab_equal(unsigned char *slab1, unsigned char *slab2,
 #endif /* if DNS_RDATASET_FIXED */
 
 		if (length1 != length2 ||
-		    memcmp(current1, current2, length1) != 0) {
+		    memcmp(current1, current2, length1) != 0)
+		{
 			return (false);
 		}
 

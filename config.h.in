@@ -294,6 +294,9 @@
 /* Define to 1 if you have the `pthread_attr_setstacksize' function. */
 #undef HAVE_PTHREAD_ATTR_SETSTACKSIZE
 
+/* Define to 1 if you have the `pthread_barrier_init' function. */
+#undef HAVE_PTHREAD_BARRIER_INIT
+
 /* Support for PTHREAD_MUTEX_ADAPTIVE_NP */
 #undef HAVE_PTHREAD_MUTEX_ADAPTIVE_NP
 
@@ -354,6 +357,9 @@
 /* define if the SPARC pause instruction is available */
 #undef HAVE_SPARC_PAUSE
 
+/* Define to 1 if you have the `SSL_CTX_set1_cert_store' function. */
+#undef HAVE_SSL_CTX_SET1_CERT_STORE
+
 /* Define to 1 if you have the `SSL_CTX_set_keylog_callback' function. */
 #undef HAVE_SSL_CTX_SET_KEYLOG_CALLBACK
 
@@ -368,6 +374,9 @@
 
 /* Define to 1 if you have the `SSL_read_ex' function. */
 #undef HAVE_SSL_READ_EX
+
+/* Define to 1 if you have the `SSL_SESSION_is_resumable' function. */
+#undef HAVE_SSL_SESSION_IS_RESUMABLE
 
 /* Define to 1 if you have the `SSL_write_ex' function. */
 #undef HAVE_SSL_WRITE_EX
@@ -387,6 +396,9 @@
 /* Define to 1 if you have the <stdlib.h> header file. */
 #undef HAVE_STDLIB_H
 
+/* Define to 1 if you have the <stdnoreturn.h> header file. */
+#undef HAVE_STDNORETURN_H
+
 /* Define to 1 if you have the <strings.h> header file. */
 #undef HAVE_STRINGS_H
 
@@ -398,6 +410,9 @@
 
 /* Define to 1 if you have the `strlcpy' function. */
 #undef HAVE_STRLCPY
+
+/* Define to 1 if you have the `strnstr' function. */
+#undef HAVE_STRNSTR
 
 /* Define to 1 if you have the `sysconf' function. */
 #undef HAVE_SYSCONF
@@ -462,14 +477,14 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
+/* Define to 1 if you have the `X509_STORE_up_ref' function. */
+#undef HAVE_X509_STORE_UP_REF
+
 /* Use zlib library */
 #undef HAVE_ZLIB
 
 /* define if __atomic builtins are not available */
 #undef HAVE___ATOMIC
-
-/* Define if you want to use inline buffers */
-#undef ISC_BUFFER_USEINLINE
 
 /* have __attribute__s used in librpz.h */
 #undef LIBRPZ_HAVE_ATTR

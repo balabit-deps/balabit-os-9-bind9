@@ -65,7 +65,7 @@ static enum { progmode_check, progmode_compile } progmode;
 		}                                                             \
 	} while (0)
 
-ISC_NORETURN static void
+noreturn static void
 usage(void);
 
 static void
@@ -147,8 +147,7 @@ main(int argc, char **argv) {
 	} else if (PROGCMP("named-compilezone")) {
 		progmode = progmode_compile;
 	} else {
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	/* Compilation specific defaults */
@@ -426,7 +425,7 @@ main(int argc, char **argv) {
 				fprintf(stderr, "%s: invalid argument -%c\n",
 					prog_name, isc_commandline_option);
 			}
-		/* FALLTHROUGH */
+			FALLTHROUGH;
 		case 'h':
 			usage();
 
@@ -473,7 +472,8 @@ main(int argc, char **argv) {
 			outputformat = dns_masterformat_raw;
 			rawversion = strtol(outputformatstr + 4, &end, 10);
 			if (end == outputformatstr + 4 || *end != '\0' ||
-			    rawversion > 1U) {
+			    rawversion > 1U)
+			{
 				fprintf(stderr, "unknown raw format version\n");
 				exit(1);
 			}
@@ -512,7 +512,8 @@ main(int argc, char **argv) {
 	}
 
 	if (argc - isc_commandline_index < 1 ||
-	    argc - isc_commandline_index > 2) {
+	    argc - isc_commandline_index > 2)
+	{
 		usage();
 	}
 

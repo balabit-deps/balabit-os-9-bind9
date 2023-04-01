@@ -78,7 +78,8 @@ cfg_aclconfctx_detach(cfg_aclconfctx_t **actxp) {
 		dns_acl_t *dacl, *next;
 		isc_refcount_destroy(&actx->references);
 		for (dacl = ISC_LIST_HEAD(actx->named_acl_cache); dacl != NULL;
-		     dacl = next) {
+		     dacl = next)
+		{
 			next = ISC_LIST_NEXT(dacl, nextincache);
 			ISC_LIST_UNLINK(actx->named_acl_cache, dacl,
 					nextincache);
@@ -246,7 +247,8 @@ count_acl_elements(const cfg_obj_t *caml, const cfg_obj_t *cctx,
 			}
 #if defined(HAVE_GEOIP2)
 		} else if (cfg_obj_istuple(ce) &&
-			   cfg_obj_isvoid(cfg_tuple_get(ce, "negated"))) {
+			   cfg_obj_isvoid(cfg_tuple_get(ce, "negated")))
+		{
 			n++;
 #endif /* HAVE_GEOIP2 */
 		} else if (cfg_obj_isstring(ce)) {
@@ -399,8 +401,7 @@ get_subtype(const cfg_obj_t *obj, isc_log_t *lctx, dns_geoip_subtype_t subtype,
 		}
 		return (subtype);
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 }
 
@@ -426,8 +427,8 @@ geoip_can_answer(dns_aclelement_t *elt, cfg_aclconfctx_t *ctx) {
 		if (ctx->geoip->country != NULL) {
 			return (true);
 		}
-	/* city db can answer these too, so: */
-	/* FALLTHROUGH */
+		/* city db can answer these too, so: */
+		FALLTHROUGH;
 	case dns_geoip_region:
 	case dns_geoip_regionname:
 	case dns_geoip_city_countrycode:
@@ -574,7 +575,8 @@ parse_geoip_element(const cfg_obj_t *obj, isc_log_t *lctx,
 		subtype = dns_geoip_city_metrocode;
 		de.geoip_elem.as_int = atoi(search);
 	} else if (strcasecmp(stype, "tz") == 0 ||
-		   strcasecmp(stype, "timezone") == 0) {
+		   strcasecmp(stype, "timezone") == 0)
+	{
 		subtype = dns_geoip_city_timezonecode;
 		strlcpy(de.geoip_elem.as_string, search,
 			sizeof(de.geoip_elem.as_string));
@@ -710,29 +712,35 @@ cfg_acl_fromconfig2(const cfg_obj_t *acl_data, const cfg_obj_t *cctx,
 
 		if (obj_transport != NULL && cfg_obj_isstring(obj_transport)) {
 			if (strcasecmp(cfg_obj_asstring(obj_transport),
-				       "udp") == 0) {
+				       "udp") == 0)
+			{
 				transports = isc_nm_udpsocket;
 				encrypted = false;
 			} else if (strcasecmp(cfg_obj_asstring(obj_transport),
-					      "tcp") == 0) {
+					      "tcp") == 0)
+			{
 				transports = isc_nm_tcpdnssocket;
 				encrypted = false;
 			} else if (strcasecmp(cfg_obj_asstring(obj_transport),
-					      "udp-tcp") == 0) {
+					      "udp-tcp") == 0)
+			{
 				/* Good ol' DNS over port 53 */
 				transports = isc_nm_tcpdnssocket |
 					     isc_nm_udpsocket;
 				encrypted = false;
 			} else if (strcasecmp(cfg_obj_asstring(obj_transport),
-					      "tls") == 0) {
+					      "tls") == 0)
+			{
 				transports = isc_nm_tlsdnssocket;
 				encrypted = true;
 			} else if (strcasecmp(cfg_obj_asstring(obj_transport),
-					      "http") == 0) {
+					      "http") == 0)
+			{
 				transports = isc_nm_httpsocket;
 				encrypted = true;
 			} else if (strcasecmp(cfg_obj_asstring(obj_transport),
-					      "http-plain") == 0) {
+					      "http-plain") == 0)
+			{
 				transports = isc_nm_httpsocket;
 				encrypted = false;
 			} else {
@@ -883,7 +891,8 @@ cfg_acl_fromconfig2(const cfg_obj_t *acl_data, const cfg_obj_t *cctx,
 			}
 #if defined(HAVE_GEOIP2)
 		} else if (cfg_obj_istuple(ce) &&
-			   cfg_obj_isvoid(cfg_tuple_get(ce, "negated"))) {
+			   cfg_obj_isvoid(cfg_tuple_get(ce, "negated")))
+		{
 			INSIST(dacl->length < dacl->alloc);
 			result = parse_geoip_element(ce, lctx, ctx, de);
 			if (result != ISC_R_SUCCESS) {
@@ -976,7 +985,8 @@ cfg_acl_fromconfig2(const cfg_obj_t *acl_data, const cfg_obj_t *cctx,
 		 * nonzero (i.e., in sortlists).
 		 */
 		if (de->nestedacl != NULL &&
-		    de->type != dns_aclelementtype_nestedacl) {
+		    de->type != dns_aclelementtype_nestedacl)
+		{
 			dns_acl_detach(&de->nestedacl);
 		}
 

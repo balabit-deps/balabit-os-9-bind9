@@ -125,8 +125,7 @@ get_addr(unsigned int family, isc_netaddr_t *dst, struct sockaddr *src,
 		}
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 }
 
@@ -203,8 +202,7 @@ isc_interfaceiter_create(isc_mem_t *mctx, isc_interfaceiter_t **iterp) {
 
 	if (getifaddrs(&iter->ifaddrs) < 0) {
 		strerror_r(errno, strbuf, sizeof(strbuf));
-		UNEXPECTED_ERROR(__FILE__, __LINE__,
-				 "getting interface addresses: getifaddrs: %s",
+		UNEXPECTED_ERROR("getting interface addresses: getifaddrs: %s",
 				 strbuf);
 		result = ISC_R_UNEXPECTED;
 		goto failure;

@@ -59,7 +59,8 @@
 				const cfg_listelt_t *proto = NULL;                \
 				INSIST(obj != NULL);                              \
 				for (proto = cfg_list_first(obj); proto != 0;     \
-				     proto = cfg_list_next(proto)) {              \
+				     proto = cfg_list_next(proto))                \
+				{                                                 \
 					const cfg_obj_t *tls_proto_obj =          \
 						cfg_listelt_value(proto);         \
 					const char *tls_sver =                    \
@@ -122,16 +123,10 @@ add_doh_transports(const cfg_obj_t *transportlist, dns_transport_list_t *list) {
 		parse_transport_bool_option(
 			doh, transport, "prefer-server-ciphers",
 			dns_transport_set_prefer_server_ciphers)
-#if 0
-		/*
-		 * The following two options need to remain unavailable until
-		 * TLS certificate verification gets implemented.
-		 */
-		parse_transport_option(doh, transport, "ca-file",
-				       dns_transport_set_cafile);
-		parse_transport_option(doh, transport, "hostname",
-				       dns_transport_set_hostname);
-#endif
+			parse_transport_option(doh, transport, "ca-file",
+					       dns_transport_set_cafile);
+		parse_transport_option(doh, transport, "remote-hostname",
+				       dns_transport_set_remote_hostname);
 	}
 
 	return (ISC_R_SUCCESS);
@@ -180,16 +175,10 @@ add_tls_transports(const cfg_obj_t *transportlist, dns_transport_list_t *list) {
 		parse_transport_bool_option(
 			tls, transport, "prefer-server-ciphers",
 			dns_transport_set_prefer_server_ciphers)
-#if 0
-		/*
-		 * The following two options need to remain unavailable until
-		 * TLS certificate verification gets implemented.
-		 */
-		parse_transport_option(tls, transport, "ca-file",
-				       dns_transport_set_cafile);
-		parse_transport_option(tls, transport, "hostname",
-				       dns_transport_set_hostname);
-#endif
+			parse_transport_option(tls, transport, "ca-file",
+					       dns_transport_set_cafile);
+		parse_transport_option(tls, transport, "remote-hostname",
+				       dns_transport_set_remote_hostname);
 	}
 
 	return (ISC_R_SUCCESS);

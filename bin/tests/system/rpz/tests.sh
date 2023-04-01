@@ -27,6 +27,8 @@ ns5=$ns.5		# another rewriting resolver
 ns6=$ns.6		# a forwarding server
 ns7=$ns.7		# another rewriting resolver
 ns8=$ns.8		# another rewriting resolver
+ns9=$ns.9		# another rewriting resolver
+ns10=$ns.10		# authoritative server
 
 HAVE_CORE=
 
@@ -217,7 +219,7 @@ restart () {
             done
         fi
     fi
-    start_server --noclean --restart --port ${PORT} rpz ns$1
+    start_server --noclean --restart --port ${PORT} ns$1
     load_db
     dnsrps_loaded
     sleep 1
@@ -405,6 +407,13 @@ nochange () {
     ckresult "$*" ${DIGNM}_OK && clean_result ${DIGNM}_OK
 }
 
+nochange_ns10 () {
+    make_dignm
+    digcmd $* >$DIGNM
+    digcmd $* @$ns10 >${DIGNM}_OK
+    ckresult "$*" ${DIGNM}_OK && clean_result ${DIGNM}_OK
+}
+
 # check against a 'here document'
 here () {
     make_dignm
@@ -414,7 +423,7 @@ here () {
 }
 
 # check dropped response
-DROPPED='^;; connection timed out; no servers could be reached'
+DROPPED='^;; no servers could be reached'
 drop () {
     make_dignm
     digcmd $* >$DIGNM
@@ -475,7 +484,7 @@ for mode in native dnsrps; do
       continue
     fi
     echo_i "attempting to configure servers with DNSRPS..."
-    $PERL ../stop.pl --use-rndc --port ${CONTROLPORT} rpz
+    stop_server --use-rndc --port ${CONTROLPORT}
     $SHELL ./setup.sh -N -D $DEBUG
     for server in ns*; do
       resetstats $server
@@ -490,7 +499,7 @@ for mode in native dnsrps; do
       continue
     else
       echo_i "running DNSRPS sub-test"
-      start_server --noclean --restart --port ${PORT} rpz
+      start_server --noclean --restart --port ${PORT}
       sleep 3
     fi
     ;;
@@ -620,6 +629,7 @@ EOF
 
   # these tests assume "min-ns-dots 0"
   start_group "NSDNAME rewrites" test3
+  nextpart ns3/named.run > /dev/null
   nochange a3-1.tld2				# 1
   nochange a3-1.tld2 +dnssec			# 2 this once caused problems
   nxdomain a3-1.sub1.tld2			# 3 NXDOMAIN *.sub1.tld2 by NSDNAME
@@ -632,25 +642,39 @@ EOF
   addr 127.0.0.1 a3-1.sub3.tld2			# 10 prefer policy for largest NSDNAME
   addr 127.0.0.2 a3-1.subsub.sub3.tld2		# 11
   nxdomain xxx.crash1.tld2			# 12 dns_db_detachnode() crash
+
+  nxdomain a3-1.stub				# 13
+  nxdomain a3-1.static-stub			# 14
+  nochange_ns10 a3-1.stub-nomatch		# 15
+  nochange_ns10 a3-1.static-stub-nomatch	# 16
   if [ "$mode" = dnsrps ]; then
-    addr 12.12.12.12 as-ns.tld5.		# 13 qname-as-ns
+    addr 12.12.12.12 as-ns.tld5.		# 17 qname-as-ns
   fi
+  nextpart ns3/named.run | grep -q "unrecognized NS rpz_rrset_find() failed: glue" &&
+  setret "seen: unrecognized NS rpz_rrset_find() failed: glue"
   end_group
   if [ "$mode" = dnsrps ]; then
-    ckstats $ns3 test3 ns3 8
+    ckstats $ns3 test3 ns3 10
   else
-    ckstats $ns3 test3 ns3 7
+    ckstats $ns3 test3 ns3 9
   fi
 
   # these tests assume "min-ns-dots 0"
   start_group "NSIP rewrites" test4
+  nextpart ns3/named.run > /dev/null
   nxdomain a3-1.tld2				# 1 NXDOMAIN for all of tld2
   nochange a3-2.tld2.				# 2 exempt rewrite by name
   nochange a0-1.tld2.				# 3 exempt rewrite by address block
   nochange a3-1.tld4				# 4 different NS IP address
+  nxdomain a4-1.stub				# 5
+  nxdomain a4-1.static-stub			# 6
+  nochange_ns10 a4-1.stub-nomatch		# 7
+  nochange_ns10 a4-1.static-stub-nomatch	# 8
   if [ "$mode" = dnsrps ]; then
-      addr 12.12.12.12 as-ns.tld5.		# 5 ip-as-ns
+      addr 12.12.12.12 as-ns.tld5.		# 9 ip-as-ns
   fi
+  nextpart ns3/named.run | grep -q "unrecognized NS rpz_rrset_find() failed: glue" &&
+  setret "seen: unrecognized NS rpz_rrset_find() failed: glue"
   end_group
 
   start_group "walled garden NSIP rewrites" test4a
@@ -662,9 +686,9 @@ EOF
 EOF
   end_group
   if [ "$mode" = dnsrps ]; then
-    ckstats $ns3 test4 ns3 5
+    ckstats $ns3 test4 ns3 7
   else
-    ckstats $ns3 test4 ns3 4
+    ckstats $ns3 test4 ns3 6
   fi
 
   # policies in ./test5 overridden by response-policy{} in ns3/named.conf
@@ -787,6 +811,7 @@ EOF
   fi
 
   # Ensure ns3 manages to transfer the fast-expire zone before shutdown.
+  nextpartreset ns3/named.run
   wait_for_log 20 "zone fast-expire/IN: transferred serial 1" ns3/named.run
 
   # reconfigure the ns5 primary server without the fast-expire zone, so
@@ -796,7 +821,7 @@ EOF
 
   # restart the main test RPZ server to see if that creates a core file
   if test -z "$HAVE_CORE"; then
-    $PERL ../stop.pl --use-rndc --port ${CONTROLPORT} rpz ns3
+    stop_server --use-rndc --port ${CONTROLPORT} ns3
     restart 3 "rebuild-bl-rpz"
     HAVE_CORE=`find ns* -name '*core*' -print`
     test -z "$HAVE_CORE" || setret "found $HAVE_CORE; memory leak?"
@@ -804,10 +829,10 @@ EOF
 
   # look for complaints from lib/dns/rpz.c and bin/name/query.c
   for runfile in ns*/named.run; do
-    EMSGS=`nextpart $runfile | egrep -l 'invalid rpz|rpz.*failed'`
+    EMSGS=`nextpart $runfile | grep -E -l 'invalid rpz|rpz.*failed'`
     if test -n "$EMSGS"; then
       setret "error messages in $runfile starting with:"
-      egrep 'invalid rpz|rpz.*failed' ns*/named.run | \
+      grep -E 'invalid rpz|rpz.*failed' ns*/named.run | \
               sed -e '10,$d' -e 's/^//' | cat_i
     fi
   done
@@ -816,11 +841,11 @@ EOF
     # restart the main test RPZ server with a bad zone.
     t=`expr $t + 1`
     echo_i "checking that ns3 with broken rpz does not crash (${t})"
-    $PERL ../stop.pl --use-rndc --port ${CONTROLPORT} rpz ns3
+    stop_server --use-rndc --port ${CONTROLPORT} ns3
     cp ns3/broken.db.in ns3/bl.db
     restart 3 # do not rebuild rpz zones
     nocrash a3-1.tld2 -tA
-    $PERL ../stop.pl --use-rndc --port ${CONTROLPORT} rpz ns3
+    stop_server --use-rndc --port ${CONTROLPORT} ns3
     restart 3 "rebuild-bl-rpz"
 
     # reload a RPZ zone that is now deliberately broken.
@@ -895,7 +920,18 @@ EOF
 
   if [ native = "$mode" ]; then
     t=`expr $t + 1`
-    echo_i "checking that "add-soa unset" works (${t})"
+    echo_i "reconfiguring server with 'add-soa no' (${t})"
+    cp ns3/named.conf ns3/named.conf.tmp
+    sed -e "s/add-soa yes/add-soa no/g" < ns3/named.conf.tmp > ns3/named.conf
+    rndc_reconfig ns3 $ns3
+    echo_i "checking that 'add-soa no' at response-policy level works (${t})"
+    $DIG walled.tld2 -p ${PORT} +noall +add @$ns3 > dig.out.${t}
+    grep "^manual-update-rpz\..*SOA" dig.out.${t} > /dev/null && setret "failed"
+  fi
+
+  if [ native = "$mode" ]; then
+    t=`expr $t + 1`
+    echo_i "checking that 'add-soa unset' works (${t})"
     $DIG walled.tld2 -p ${PORT} +noall +add @$ns8 > dig.out.${t}
     grep "^manual-update-rpz\..*SOA" dig.out.${t} > /dev/null || setret "failed"
   fi
@@ -941,6 +977,15 @@ EOF
       status=`expr $status + $ret`
     done
   done
+
+  if [ native = "$mode" ]; then
+    t=`expr $t + 1`
+    echo_i "checking that rewriting CD=1 queries handles pending data correctly (${t})"
+    $RNDCCMD $ns3 flush
+    $RNDCCMD $ns6 flush
+    $DIG a7-2.tld2s -p ${PORT} @$ns6 +cd > dig.out.${t}
+    grep -w "1.1.1.1" dig.out.${t} > /dev/null || setret "failed"
+  fi
 
   [ $status -ne 0 ] && pf=fail || pf=pass
   case $mode in

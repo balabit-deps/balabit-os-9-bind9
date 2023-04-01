@@ -50,7 +50,7 @@ struct dns_transport {
 		char *certfile;
 		char *keyfile;
 		char *cafile;
-		char *hostname;
+		char *remote_hostname;
 		char *ciphers;
 		uint32_t protocol_versions;
 		ternary_t prefer_server_ciphers;
@@ -118,10 +118,10 @@ dns_transport_get_cafile(dns_transport_t *transport) {
 }
 
 char *
-dns_transport_get_hostname(dns_transport_t *transport) {
+dns_transport_get_remote_hostname(dns_transport_t *transport) {
 	REQUIRE(VALID_TRANSPORT(transport));
 
-	return (transport->tls.hostname);
+	return (transport->tls.remote_hostname);
 }
 
 char *
@@ -201,18 +201,19 @@ dns_transport_set_cafile(dns_transport_t *transport, const char *cafile) {
 }
 
 void
-dns_transport_set_hostname(dns_transport_t *transport, const char *hostname) {
+dns_transport_set_remote_hostname(dns_transport_t *transport,
+				  const char *hostname) {
 	REQUIRE(VALID_TRANSPORT(transport));
 	REQUIRE(transport->type == DNS_TRANSPORT_TLS ||
 		transport->type == DNS_TRANSPORT_HTTP);
 
-	if (transport->tls.hostname != NULL) {
-		isc_mem_free(transport->mctx, transport->tls.hostname);
+	if (transport->tls.remote_hostname != NULL) {
+		isc_mem_free(transport->mctx, transport->tls.remote_hostname);
 	}
 
 	if (hostname != NULL) {
-		transport->tls.hostname = isc_mem_strdup(transport->mctx,
-							 hostname);
+		transport->tls.remote_hostname = isc_mem_strdup(transport->mctx,
+								hostname);
 	}
 }
 
@@ -327,8 +328,7 @@ dns_transport_get_prefer_server_ciphers(const dns_transport_t *transport,
 		return (true);
 	}
 
-	INSIST(0);
-	ISC_UNREACHABLE();
+	UNREACHABLE();
 	return false;
 }
 
@@ -340,8 +340,8 @@ transport_destroy(dns_transport_t *transport) {
 	if (transport->doh.endpoint != NULL) {
 		isc_mem_free(transport->mctx, transport->doh.endpoint);
 	}
-	if (transport->tls.hostname != NULL) {
-		isc_mem_free(transport->mctx, transport->tls.hostname);
+	if (transport->tls.remote_hostname != NULL) {
+		isc_mem_free(transport->mctx, transport->tls.remote_hostname);
 	}
 	if (transport->tls.cafile != NULL) {
 		isc_mem_free(transport->mctx, transport->tls.cafile);

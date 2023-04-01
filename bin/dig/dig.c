@@ -59,7 +59,7 @@
 
 dig_lookup_t *default_lookup = NULL;
 
-static atomic_uintptr_t batchname = ATOMIC_VAR_INIT(0);
+static atomic_uintptr_t batchname = 0;
 static FILE *batchfp = NULL;
 static char *argv0;
 static int addresscount = 0;
@@ -113,7 +113,7 @@ usage(void) {
 	fprintf(stderr, "Press <Help> for complete list of options\n");
 }
 #else  /* if TARGET_OS_IPHONE */
-ISC_NORETURN static void
+noreturn static void
 usage(void);
 
 static void
@@ -212,9 +212,6 @@ help(void) {
 	       "from ipv4only.arpa)\n"
 	       "                 +[no]dnssec         (Request DNSSEC records)\n"
 	       "                 +domain=###         (Set default domainname)\n"
-	       "                 +[no]dscp[=###]     (Set the DSCP value to "
-	       "### "
-	       "[0..63])\n"
 	       "                 +[no]edns[=###]     (Set EDNS version) [0]\n"
 	       "                 +ednsflags=###      (Set EDNS flag bits)\n"
 	       "                 +[no]ednsnegotiation (Set EDNS version "
@@ -232,7 +229,12 @@ help(void) {
 	       "                 +[no]https[=###]    (DNS-over-HTTPS mode) "
 	       "[/]\n"
 	       "                 +[no]https-get      (Use GET instead of "
-	       "default POST method\n"
+	       "default POST method while using HTTPS)\n"
+	       "                 +[no]http-plain[=###]    (DNS over plain HTTP "
+	       "mode) "
+	       "[/]\n"
+	       "                 +[no]https-plain-get      (Use GET instead of "
+	       "default POST method while using plain HTTP)\n"
 	       "                 +[no]identify       (ID responders in short "
 	       "answers)\n"
 #ifdef HAVE_LIBIDN2
@@ -260,6 +262,8 @@ help(void) {
 	       "request)\n"
 	       "                 +padding=###        (Set padding block size "
 	       "[0])\n"
+	       "                 +qid=###            (Specify the query ID to "
+	       "use when sending queries)\n"
 	       "                 +[no]qr             (Print question before "
 	       "sending)\n"
 	       "                 +[no]question       (Control display of "
@@ -295,6 +299,14 @@ help(void) {
 	       "                 +[no]tcp            (TCP mode (+[no]vc))\n"
 	       "                 +timeout=###        (Set query timeout) [5]\n"
 	       "                 +[no]tls            (DNS-over-TLS mode)\n"
+	       "                 +[no]tls-ca[=file]  (Enable remote server's "
+	       "TLS certificate validation)\n"
+	       "                 +[no]tls-hostname=hostname (Explicitly set "
+	       "the expected TLS hostname)\n"
+	       "                 +[no]tls-certfile=file (Load client TLS "
+	       "certificate chain from file)\n"
+	       "                 +[no]tls-keyfile=file (Load client TLS "
+	       "private key from file)\n"
 	       "                 +[no]trace          (Trace delegation down "
 	       "from root "
 	       "[+dnssec])\n"
@@ -346,13 +358,15 @@ received(unsigned int bytes, isc_sockaddr_t *from, dig_query_t *query) {
 		} else {
 			printf(";; Query time: %ld msec\n", (long)diff / 1000);
 		}
-		if (query->lookup->tls_mode) {
+		if (dig_lookup_is_tls(query->lookup)) {
 			proto = "TLS";
 		} else if (query->lookup->https_mode) {
 			if (query->lookup->http_plain) {
-				proto = "HTTP";
+				proto = query->lookup->https_get ? "HTTP-GET"
+								 : "HTTP";
 			} else {
-				proto = "HTTPS";
+				proto = query->lookup->https_get ? "HTTPS-GET"
+								 : "HTTPS";
 			}
 		} else if (query->lookup->tcp_mode) {
 			proto = "TCP";
@@ -496,10 +510,12 @@ dns64prefix_answer(dns_message_t *msg, isc_buffer_t *buf) {
 	}
 
 	result = dns_dns64_findprefix(rdataset, prefix, &count);
-	if (result == ISC_R_NOTFOUND)
+	if (result == ISC_R_NOTFOUND) {
 		return (ISC_R_SUCCESS);
-	if (count > 10)
+	}
+	if (count > 10) {
 		count = 10;
+	}
 	for (i = 0; i < count; i++) {
 		result = isc_netaddr_totext(&prefix[i].addr, buf);
 		if (result != ISC_R_SUCCESS) {
@@ -569,7 +585,7 @@ short_answer(dns_message_t *msg, dns_messagetextflag_t flags, isc_buffer_t *buf,
 static bool
 isdotlocal(dns_message_t *msg) {
 	isc_result_t result;
-	static unsigned char local_ndata[] = { "\005local\0" };
+	static unsigned char local_ndata[] = { "\005local" };
 	static unsigned char local_offsets[] = { 0, 6 };
 	static dns_name_t local = DNS_NAME_INITABSOLUTE(local_ndata,
 							local_offsets);
@@ -682,7 +698,8 @@ printmessage(dig_query_t *query, const isc_buffer_t *msgbuf, dns_message_t *msg,
 		flags |= DNS_MESSAGETEXTFLAG_NOCOMMENTS;
 	}
 	if (query->lookup->onesoa &&
-	    query->lookup->rdtype == dns_rdatatype_axfr) {
+	    query->lookup->rdtype == dns_rdatatype_axfr)
+	{
 		flags |= (query->msg_count == 0) ? DNS_MESSAGETEXTFLAG_ONESOA
 						 : DNS_MESSAGETEXTFLAG_OMITSOA;
 	}
@@ -771,7 +788,7 @@ printmessage(dig_query_t *query, const isc_buffer_t *msgbuf, dns_message_t *msg,
 				strlcat(sockstr, "0", sizeof(sockstr));
 			}
 
-			printf("    response_address: %s\n", sockstr);
+			printf("    response_address: \"%s\"\n", sockstr);
 			printf("    response_port: %u\n", sport);
 		}
 
@@ -788,7 +805,7 @@ printmessage(dig_query_t *query, const isc_buffer_t *msgbuf, dns_message_t *msg,
 				strlcat(sockstr, "0", sizeof(sockstr));
 			}
 
-			printf("    query_address: %s\n", sockstr);
+			printf("    query_address: \"%s\"\n", sockstr);
 			printf("    query_port: %u\n", sport);
 		}
 
@@ -909,8 +926,9 @@ repopulate_buffer:
 			check_result(result, "dns_message_sectiontotext");
 		} else if (dns64prefix) {
 			result = dns64prefix_answer(msg, buf);
-			if (result == ISC_R_NOSPACE)
+			if (result == ISC_R_NOSPACE) {
 				goto buftoosmall;
+			}
 			check_result(result, "dns64prefix_answer");
 		} else {
 			result = short_answer(msg, flags, buf, query);
@@ -1018,6 +1036,128 @@ printgreeting(int argc, char **argv, dig_lookup_t *lookup) {
 	}
 }
 
+#define FULLCHECK(A)                                                 \
+	do {                                                         \
+		size_t _l = strlen(cmd);                             \
+		if (_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) \
+			goto invalid_option;                         \
+	} while (0)
+#define FULLCHECK2(A, B)                                                 \
+	do {                                                             \
+		size_t _l = strlen(cmd);                                 \
+		if ((_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) && \
+		    (_l >= sizeof(B) || strncasecmp(cmd, B, _l) != 0))   \
+			goto invalid_option;                             \
+	} while (0)
+#define FULLCHECK6(A, B, C, D, E, F)                                     \
+	do {                                                             \
+		size_t _l = strlen(cmd);                                 \
+		if ((_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) && \
+		    (_l >= sizeof(B) || strncasecmp(cmd, B, _l) != 0) && \
+		    (_l >= sizeof(C) || strncasecmp(cmd, C, _l) != 0) && \
+		    (_l >= sizeof(D) || strncasecmp(cmd, D, _l) != 0) && \
+		    (_l >= sizeof(E) || strncasecmp(cmd, E, _l) != 0) && \
+		    (_l >= sizeof(F) || strncasecmp(cmd, F, _l) != 0))   \
+			goto invalid_option;                             \
+	} while (0)
+
+static bool
+plus_tls_options(const char *cmd, const char *value, const bool state,
+		 dig_lookup_t *lookup) {
+	/*
+	 * Using TLS implies "TCP-like" mode.
+	 */
+	if (!lookup->tcp_mode_set) {
+		lookup->tcp_mode = state;
+	}
+	switch (cmd[3]) {
+	case '-':
+		/*
+		 * Assume that if any of the +tls-* options are set, then we
+		 * need to verify the remote certificate (compatibility with
+		 * kdig).
+		 */
+		if (state) {
+			lookup->tls_ca_set = state;
+		}
+		switch (cmd[4]) {
+		case 'c':
+			switch (cmd[5]) {
+			case 'a':
+				FULLCHECK("tls-ca");
+				lookup->tls_ca_set = state;
+				if (state && value != NULL) {
+					lookup->tls_ca_file =
+						isc_mem_strdup(mctx, value);
+				}
+				break;
+			case 'e':
+				FULLCHECK("tls-certfile");
+				lookup->tls_cert_file_set = state;
+				if (state) {
+					if (value != NULL && *value != '\0') {
+						lookup->tls_cert_file =
+							isc_mem_strdup(mctx,
+								       value);
+					} else {
+						fprintf(stderr,
+							";; TLS certificate "
+							"file is "
+							"not specified\n");
+						goto invalid_option;
+					}
+				}
+				break;
+			default:
+				goto invalid_option;
+			}
+			break;
+		case 'h':
+			FULLCHECK("tls-hostname");
+			lookup->tls_hostname_set = state;
+			if (state) {
+				if (value != NULL && *value != '\0') {
+					lookup->tls_hostname =
+						isc_mem_strdup(mctx, value);
+				} else {
+					fprintf(stderr, ";; TLS hostname is "
+							"not specified\n");
+					goto invalid_option;
+				}
+			}
+			break;
+		case 'k':
+			FULLCHECK("tls-keyfile");
+			lookup->tls_key_file_set = state;
+			if (state) {
+				if (value != NULL && *value != '\0') {
+					lookup->tls_key_file =
+						isc_mem_strdup(mctx, value);
+				} else {
+					fprintf(stderr,
+						";; TLS private key file is "
+						"not specified\n");
+					goto invalid_option;
+				}
+			}
+			break;
+		default:
+			goto invalid_option;
+		}
+		break;
+	case '\0':
+		FULLCHECK("tls");
+		lookup->tls_mode = state;
+		break;
+	default:
+		goto invalid_option;
+	}
+
+	return true;
+invalid_option:
+	return false;
+}
+
 /*%
  * We're not using isc_commandline_parse() here since the command line
  * syntax of dig is quite a bit different from that which can be described
@@ -1046,31 +1186,6 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 	}
 	/* parse the rest of the string */
 	value = strtok_r(NULL, "", &last);
-
-#define FULLCHECK(A)                                                 \
-	do {                                                         \
-		size_t _l = strlen(cmd);                             \
-		if (_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) \
-			goto invalid_option;                         \
-	} while (0)
-#define FULLCHECK2(A, B)                                                 \
-	do {                                                             \
-		size_t _l = strlen(cmd);                                 \
-		if ((_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) && \
-		    (_l >= sizeof(B) || strncasecmp(cmd, B, _l) != 0))   \
-			goto invalid_option;                             \
-	} while (0)
-#define FULLCHECK6(A, B, C, D, E, F)                                     \
-	do {                                                             \
-		size_t _l = strlen(cmd);                                 \
-		if ((_l >= sizeof(A) || strncasecmp(cmd, A, _l) != 0) && \
-		    (_l >= sizeof(B) || strncasecmp(cmd, B, _l) != 0) && \
-		    (_l >= sizeof(C) || strncasecmp(cmd, C, _l) != 0) && \
-		    (_l >= sizeof(D) || strncasecmp(cmd, D, _l) != 0) && \
-		    (_l >= sizeof(E) || strncasecmp(cmd, E, _l) != 0) && \
-		    (_l >= sizeof(F) || strncasecmp(cmd, F, _l) != 0))   \
-			goto invalid_option;                             \
-	} while (0)
 
 	switch (cmd[0]) {
 	case 'a':
@@ -1282,20 +1397,10 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 			strlcpy(domainopt, value, sizeof(domainopt));
 			break;
 		case 's': /* dscp */
+			/* obsolete */
 			FULLCHECK("dscp");
-			if (!state) {
-				lookup->dscp = -1;
-				break;
-			}
-			if (value == NULL) {
-				goto need_value;
-			}
-			result = parse_uint(&num, value, 0x3f, "DSCP");
-			if (result != ISC_R_SUCCESS) {
-				warn("Couldn't parse DSCP value");
-				goto exit_or_usage;
-			}
-			lookup->dscp = num;
+			fprintf(stderr, ";; +dscp option is obsolete "
+					"and has no effect");
 			break;
 		default:
 			goto invalid_option;
@@ -1413,8 +1518,31 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 		}
 		break;
 	case 'f': /* fail */
-		FULLCHECK("fail");
-		lookup->servfail_stops = state;
+		switch (cmd[1]) {
+		case 'a':
+			FULLCHECK("fail");
+			lookup->servfail_stops = state;
+			break;
+		case 'u':
+			FULLCHECK("fuzztime");
+			lookup->fuzzing = state;
+			if (lookup->fuzzing) {
+				if (value == NULL) {
+					lookup->fuzztime = 0x622acce1;
+					break;
+				}
+				result = parse_uint(&num, value, 0xffffffff,
+						    "fuzztime");
+				if (result != ISC_R_SUCCESS) {
+					warn("Couldn't parse fuzztime");
+					goto exit_or_usage;
+				}
+				lookup->fuzztime = num;
+			}
+			break;
+		default:
+			goto invalid_option;
+		}
 		break;
 	case 'h':
 		switch (cmd[1]) {
@@ -1443,12 +1571,12 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 					FULLCHECK("http-plain");
 					break;
 				case '-':
-					switch (cmd[6]) {
+					switch (cmd[11]) {
 					case 'p':
-						FULLCHECK("https-plain-post");
+						FULLCHECK("http-plain-post");
 						break;
 					case 'g':
-						FULLCHECK("https-plain-get");
+						FULLCHECK("http-plain-get");
 						lookup->https_get = true;
 						break;
 					}
@@ -1661,7 +1789,8 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 			}
 			for (num = 0;
 			     num < sizeof(opcodetext) / sizeof(opcodetext[0]);
-			     num++) {
+			     num++)
+			{
 				if (strcasecmp(opcodetext[num], value) == 0) {
 					break;
 				}
@@ -1934,10 +2063,16 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 			}
 			break;
 		case 'l':
-			FULLCHECK("tls");
-			lookup->tls_mode = state;
-			if (!lookup->tcp_mode_set) {
-				lookup->tcp_mode = state;
+			switch (cmd[2]) {
+			case 's':
+				if (!plus_tls_options(cmd, value, state,
+						      lookup))
+				{
+					goto invalid_option;
+				}
+				break;
+			default:
+				goto invalid_option;
 			}
 			break;
 		case 'o':
@@ -2112,7 +2247,7 @@ dash_option(char *option, char *next, dig_lookup_t **lookup,
 				have_ipv6 = false;
 			} else {
 				fatal("can't find IPv4 networking");
-				/* NOTREACHED */
+				UNREACHABLE();
 				return (false);
 			}
 			break;
@@ -2122,7 +2257,7 @@ dash_option(char *option, char *next, dig_lookup_t **lookup,
 				have_ipv4 = false;
 			} else {
 				fatal("can't find IPv6 networking");
-				/* NOTREACHED */
+				UNREACHABLE();
 				return (false);
 			}
 			break;
@@ -2273,7 +2408,8 @@ dash_option(char *option, char *next, dig_lookup_t **lookup,
 			result = dns_rdatatype_fromtext(
 				&rdtype, (isc_textregion_t *)&tr);
 			if (result == ISC_R_SUCCESS &&
-			    rdtype == dns_rdatatype_ixfr) {
+			    rdtype == dns_rdatatype_ixfr)
+			{
 				result = DNS_R_UNKNOWN;
 			}
 		}
@@ -2346,7 +2482,8 @@ dash_option(char *option, char *next, dig_lookup_t **lookup,
 		}
 		*need_clone = true;
 		if (get_reverse(textname, sizeof(textname), value, false) ==
-		    ISC_R_SUCCESS) {
+		    ISC_R_SUCCESS)
+		{
 			strlcpy((*lookup)->textname, textname,
 				sizeof((*lookup)->textname));
 			debug("looking up %s", (*lookup)->textname);
@@ -2374,7 +2511,7 @@ dash_option(char *option, char *next, dig_lookup_t **lookup,
 		fprintf(stderr, "Invalid option: -%s\n", option);
 		usage();
 	}
-	/* NOTREACHED */
+	UNREACHABLE();
 	return (false);
 }
 
@@ -2528,7 +2665,8 @@ parse_args(bool is_batchfile, bool config_only, int argc, char **argv) {
 		}
 		if (batchfp != NULL) {
 			while (fgets(batchline, sizeof(batchline), batchfp) !=
-			       0) {
+			       0)
+			{
 				debug("config line %s", batchline);
 				bargc = split_batchline(batchline, bargv, 62,
 							".digrc argv");
@@ -2620,7 +2758,8 @@ parse_args(bool is_batchfile, bool config_only, int argc, char **argv) {
 						&rdtype,
 						(isc_textregion_t *)&tr);
 					if (result == ISC_R_SUCCESS &&
-					    rdtype == dns_rdatatype_ixfr) {
+					    rdtype == dns_rdatatype_ixfr)
+					{
 						fprintf(stderr, ";; Warning, "
 								"ixfr requires "
 								"a "
@@ -2660,7 +2799,8 @@ parse_args(bool is_batchfile, bool config_only, int argc, char **argv) {
 						lookup->rdtype = rdtype;
 						lookup->rdtypeset = true;
 						if (rdtype ==
-						    dns_rdatatype_axfr) {
+						    dns_rdatatype_axfr)
+						{
 							lookup->section_question =
 								plusquest;
 							lookup->comments =
@@ -2668,7 +2808,8 @@ parse_args(bool is_batchfile, bool config_only, int argc, char **argv) {
 						}
 						if (rdtype ==
 							    dns_rdatatype_any &&
-						    !lookup->tcp_mode_set) {
+						    !lookup->tcp_mode_set)
+						{
 							lookup->tcp_mode = true;
 						}
 						lookup->ixfr_serial = false;

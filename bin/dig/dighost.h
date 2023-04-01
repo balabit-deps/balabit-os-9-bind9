@@ -105,17 +105,18 @@ typedef struct dig_searchlist dig_searchlist_t;
 struct dig_lookup {
 	unsigned int magic;
 	isc_refcount_t references;
-	bool aaonly, adflag, badcookie, besteffort, cdflag, comments,
+	bool aaonly, adflag, badcookie, besteffort, cdflag, cleared, comments,
 		dns64prefix, dnssec, doing_xfr, done_as_is, ednsneg, expandaaaa,
-		expire, header_only, identify, /*%< Append an "on server <foo>"
-						  message */
-		identify_previous_line,	       /*% Prepend a "Nameserver <foo>:"
-						  message, with newline and tab */
+		expire, fuzzing, header_only, identify, /*%< Append an "on
+							   server <foo>" message
+							 */
+		identify_previous_line, /*% Prepend a "Nameserver <foo>:"
+					   message, with newline and tab */
 		idnin, idnout, ignore, multiline, need_search, new_search,
 		noclass, nocrypto, nottl, ns_search_only, /*%< dig +nssearch,
 							     host -C */
-		nsid,		 /*% Name Server ID (RFC 5001) */
-		onesoa, pending, /*%< Pending a successful answer */
+		ns_search_success, nsid, /*% Name Server ID (RFC 5001) */
+		onesoa, pending,	 /*%< Pending a successful answer */
 		print_unknown_format, qr, raflag, recurse, section_additional,
 		section_answer, section_authority, section_question,
 		seenbadcookie, sendcookie, servfail_stops,
@@ -165,11 +166,9 @@ struct dig_lookup {
 	char *cookie;
 	dns_ednsopt_t *ednsopts;
 	unsigned int ednsoptscnt;
-	isc_dscp_t dscp;
 	unsigned int ednsflags;
 	dns_opcode_t opcode;
 	int rrcomments;
-	unsigned int eoferr;
 	uint16_t qid;
 	struct {
 		bool http_plain;
@@ -177,17 +176,30 @@ struct dig_lookup {
 		bool https_get;
 		char *https_path;
 	};
+	struct {
+		bool tls_ca_set;
+		char *tls_ca_file;
+		bool tls_hostname_set;
+		char *tls_hostname;
+		bool tls_cert_file_set;
+		char *tls_cert_file;
+		bool tls_key_file_set;
+		char *tls_key_file;
+		isc_tlsctx_cache_t *tls_ctx_cache;
+	};
+	isc_stdtime_t fuzztime;
 };
 
 /*% The dig_query structure */
 struct dig_query {
 	unsigned int magic;
 	dig_lookup_t *lookup;
-	bool first_pass;
+	bool started;
 	bool first_soa_rcvd;
 	bool second_rr_rcvd;
 	bool first_repeat_rcvd;
 	bool warn_id;
+	bool canceled;
 	uint32_t first_rr_serial;
 	uint32_t second_rr_serial;
 	uint32_t msg_count;
@@ -208,7 +220,6 @@ struct dig_query {
 	isc_time_t time_recv;
 	uint64_t byte_count;
 	isc_timer_t *timer;
-	isc_tlsctx_t *tlsctx;
 };
 
 struct dig_server {
@@ -275,13 +286,13 @@ getaddresses(dig_lookup_t *lookup, const char *host, isc_result_t *resultp);
 isc_result_t
 get_reverse(char *reverse, size_t len, char *value, bool strict);
 
-ISC_NORETURN void
+noreturn void
 fatal(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
 
 void
 warn(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
 
-ISC_NORETURN void
+noreturn void
 digexit(void);
 
 void
@@ -445,5 +456,8 @@ dig_idnsetup(dig_lookup_t *lookup, bool active);
  */
 void
 dig_shutdown(void);
+
+bool
+dig_lookup_is_tls(const dig_lookup_t *lookup);
 
 ISC_LANG_ENDDECLS

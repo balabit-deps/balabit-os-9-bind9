@@ -128,7 +128,7 @@ dns_nsec_buildrdata(dns_db_t *db, dns_dbversion_t *version, dns_dbnode_t *node,
 	max_type = dns_rdatatype_nsec;
 	dns_rdataset_init(&rdataset);
 	rdsiter = NULL;
-	result = dns_db_allrdatasets(db, node, version, 0, &rdsiter);
+	result = dns_db_allrdatasets(db, node, version, 0, 0, &rdsiter);
 	if (result != ISC_R_SUCCESS) {
 		return (result);
 	}
@@ -156,7 +156,8 @@ dns_nsec_buildrdata(dns_db_t *db, dns_dbversion_t *version, dns_dbnode_t *node,
 	{
 		for (i = 0; i <= max_type; i++) {
 			if (dns_nsec_isset(bm, i) &&
-			    !dns_rdatatype_iszonecutauth((dns_rdatatype_t)i)) {
+			    !dns_rdatatype_iszonecutauth((dns_rdatatype_t)i))
+			{
 				dns_nsec_setbit(bm, i, 0);
 			}
 		}
@@ -247,7 +248,8 @@ dns_nsec_typepresent(dns_rdata_t *nsec, dns_rdatatype_t type) {
 }
 
 isc_result_t
-dns_nsec_nseconly(dns_db_t *db, dns_dbversion_t *version, bool *answer) {
+dns_nsec_nseconly(dns_db_t *db, dns_dbversion_t *version, dns_diff_t *diff,
+		  bool *answer) {
 	dns_dbnode_t *node = NULL;
 	dns_rdataset_t rdataset;
 	dns_rdata_dnskey_t dnskey;
@@ -282,8 +284,36 @@ dns_nsec_nseconly(dns_db_t *db, dns_dbversion_t *version, bool *answer) {
 		RUNTIME_CHECK(result == ISC_R_SUCCESS);
 
 		if (dnskey.algorithm == DST_ALG_RSAMD5 ||
-		    dnskey.algorithm == DST_ALG_RSASHA1) {
-			break;
+		    dnskey.algorithm == DST_ALG_DH ||
+		    dnskey.algorithm == DST_ALG_DSA ||
+		    dnskey.algorithm == DST_ALG_RSASHA1)
+		{
+			bool deleted = false;
+			if (diff != NULL) {
+				for (dns_difftuple_t *tuple =
+					     ISC_LIST_HEAD(diff->tuples);
+				     tuple != NULL;
+				     tuple = ISC_LIST_NEXT(tuple, link))
+				{
+					if (tuple->rdata.type !=
+						    dns_rdatatype_dnskey ||
+					    tuple->op != DNS_DIFFOP_DEL)
+					{
+						continue;
+					}
+
+					if (dns_rdata_compare(
+						    &rdata, &tuple->rdata) == 0)
+					{
+						deleted = true;
+						break;
+					}
+				}
+			}
+
+			if (!deleted) {
+				break;
+			}
 		}
 	}
 	dns_rdataset_disassociate(&rdataset);

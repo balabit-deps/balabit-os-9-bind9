@@ -143,11 +143,10 @@ struct ns_clientmgr {
 	/* Unlocked. */
 	unsigned int magic;
 
-	isc_mem_t	  *mctx;
+	isc_mem_t      *mctx;
 	ns_server_t    *sctx;
 	isc_taskmgr_t  *taskmgr;
 	isc_timermgr_t *timermgr;
-	isc_task_t	   *excl;
 	isc_refcount_t	references;
 	int		tid;
 
@@ -155,10 +154,6 @@ struct ns_clientmgr {
 	isc_task_t *task;
 
 	dns_aclenv_t *aclenv;
-
-	/* Lock covers manager state. */
-	isc_mutex_t lock;
-	bool	    exiting;
 
 	/* Lock covers the recursing list */
 	isc_mutex_t   reclock;
@@ -168,22 +163,22 @@ struct ns_clientmgr {
 /*% nameserver client structure */
 struct ns_client {
 	unsigned int	 magic;
-	isc_mem_t	  *mctx;
+	isc_mem_t	*mctx;
 	int		 tid;
 	bool		 allocated; /* Do we need to free it? */
-	ns_server_t	    *sctx;
-	ns_clientmgr_t  *manager;
+	ns_server_t	*sctx;
+	ns_clientmgr_t	*manager;
 	ns_clientstate_t state;
 	int		 nupdates;
 	bool		 nodetach;
 	bool		 shuttingdown;
 	unsigned int	 attributes;
-	isc_task_t	   *task;
-	dns_view_t	   *view;
-	dns_dispatch_t  *dispatch;
-	isc_nmhandle_t  *handle;	/* Permanent pointer to handle */
-	isc_nmhandle_t  *sendhandle;	/* Waiting for send callback */
-	isc_nmhandle_t  *reqhandle;	/* Waiting for request callback
+	isc_task_t	*task;
+	dns_view_t	*view;
+	dns_dispatch_t	*dispatch;
+	isc_nmhandle_t	*handle;	/* Permanent pointer to handle */
+	isc_nmhandle_t	*sendhandle;	/* Waiting for send callback */
+	isc_nmhandle_t	*reqhandle;	/* Waiting for request callback
 					   (query, update, notify) */
 	isc_nmhandle_t *fetchhandle;	/* Waiting for recursive fetch */
 	isc_nmhandle_t *prefetchhandle; /* Waiting for prefetch / rpzfetch */
@@ -215,7 +210,6 @@ struct ns_client {
 	dns_ecs_t ecs; /*%< EDNS client subnet sent by client */
 
 	struct in6_pktinfo pktinfo;
-	isc_dscp_t	   dscp;
 	/*%
 	 * Information about recent FORMERR response(s), for
 	 * FORMERR loop avoidance.  This is separate for each
@@ -353,10 +347,16 @@ ns_clientmgr_create(ns_server_t *sctx, isc_taskmgr_t *taskmgr,
  */
 
 void
-ns_clientmgr_destroy(ns_clientmgr_t **managerp);
+ns_clientmgr_shutdown(ns_clientmgr_t *manager);
 /*%<
- * Destroy a client manager and all ns_client_t objects
- * managed by it.
+ * Shutdown a client manager and all ns_client_t objects
+ * managed by it
+ */
+
+void
+ns_clientmgr_detach(ns_clientmgr_t **managerp);
+/*%<
+ * Detach from a client manager.
  */
 
 isc_sockaddr_t *

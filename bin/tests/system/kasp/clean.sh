@@ -16,8 +16,9 @@ set -e
 rm -f ./keygen.*
 rm -f ./K*.private ./K*.key ./K*.state ./K*.cmp
 rm -rf ./keys/
-rm -f dig.out* rrsig.out.* keyevent.out.*
+rm -f dig.out* rrsig.out.* keyevent.out.* verify.out.* zone.out.*
 rm -f ns*/named.conf ns*/named.memstats ns*/named.run*
+rm -f ns*/named-fips.conf
 rm -f ns*/policies/*.conf
 rm -f ns*/*.jnl ns*/*.jbk
 rm -f ns*/K*.private ns*/K*.key ns*/K*.state
@@ -29,7 +30,7 @@ rm -f ns*/zones ns*/*.db.infile
 rm -f ns*/*.zsk1 ns*/*.zsk2
 rm -f ns3/legacy-keys.*
 rm -f *.created published.test* retired.test*
-rm -f rndc.dnssec.*.out.*
+rm -f rndc.dnssec.*.out.* rndc.zonestatus.out.*
 rm -f python.out.*
 rm -f *-supported.file
 rm -f created.key-* unused.key-*

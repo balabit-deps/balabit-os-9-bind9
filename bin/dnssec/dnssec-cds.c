@@ -636,7 +636,8 @@ matching_sigs(keyinfo_t *keytbl, dns_rdataset_t *rdataset,
 						   NULL);
 
 			if (result != ISC_R_SUCCESS &&
-			    result != DNS_R_FROMWILDCARD) {
+			    result != DNS_R_FROMWILDCARD)
+			{
 				vbprintf(1,
 					 "skip RRSIG by key %d:"
 					 " verification failed: %s\n",
@@ -845,7 +846,7 @@ make_new_ds_set(ds_maker_func_t *ds_from_rdata, uint32_t ttl,
 	}
 }
 
-static inline int
+static int
 rdata_cmp(const void *rdata1, const void *rdata2) {
 	return (dns_rdata_compare((const dns_rdata_t *)rdata1,
 				  (const dns_rdata_t *)rdata2));
@@ -1015,7 +1016,7 @@ nsdiff(uint32_t ttl, dns_rdataset_t *oldset, dns_rdataset_t *newset) {
 	}
 }
 
-ISC_NORETURN static void
+noreturn static void
 usage(void);
 
 static void
@@ -1085,7 +1086,8 @@ main(int argc, char *argv[]) {
 			 * optional, so that it works just like sed(1).
 			 */
 			if (isc_commandline_argument ==
-			    argv[isc_commandline_index - 1]) {
+			    argv[isc_commandline_index - 1])
+			{
 				isc_commandline_index--;
 				inplace = "";
 			} else {
@@ -1177,7 +1179,8 @@ main(int argc, char *argv[]) {
 		fatal("missing RRSIG CDNSKEY records for %s", namestr);
 	}
 	if (dns_rdataset_isassociated(&cds_set) &&
-	    !dns_rdataset_isassociated(&cds_sig)) {
+	    !dns_rdataset_isassociated(&cds_sig))
+	{
 		fatal("missing RRSIG CDS records for %s", namestr);
 	}
 
@@ -1200,7 +1203,8 @@ main(int argc, char *argv[]) {
 	if (dns_rdataset_isassociated(&cdnskey_set)) {
 		vbprintf(1, "verify CDNSKEY signature(s)\n");
 		if (!signed_loose(matching_sigs(old_key_tbl, &cdnskey_set,
-						&cdnskey_sig))) {
+						&cdnskey_sig)))
+		{
 			fatal("could not validate child CDNSKEY RRset for %s",
 			      namestr);
 		}
@@ -1208,7 +1212,8 @@ main(int argc, char *argv[]) {
 	if (dns_rdataset_isassociated(&cds_set)) {
 		vbprintf(1, "verify CDS signature(s)\n");
 		if (!signed_loose(
-			    matching_sigs(old_key_tbl, &cds_set, &cds_sig))) {
+			    matching_sigs(old_key_tbl, &cds_set, &cds_sig)))
+		{
 			fatal("could not validate child CDS RRset for %s",
 			      namestr);
 		}

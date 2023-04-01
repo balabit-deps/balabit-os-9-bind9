@@ -28,6 +28,22 @@
  */
 
 /***
+ *** Clang Compatibility Macros
+ ***/
+
+#if !defined(__has_attribute)
+#define __has_attribute(x) 0
+#endif /* if !defined(__has_attribute) */
+
+#if !defined(__has_c_attribute)
+#define __has_c_attribute(x) 0
+#endif /* if !defined(__has_c_attribute) */
+
+#if !defined(__has_feature)
+#define __has_feature(x) 0
+#endif /* if !defined(__has_feature) */
+
+/***
  *** General Macros.
  ***/
 
@@ -48,6 +64,16 @@
 #else /* if __GNUC__ >= 8 && !defined(__clang__) */
 #define ISC_NONSTRING
 #endif /* __GNUC__ */
+
+#if __has_c_attribute(fallthrough)
+#define FALLTHROUGH [[fallthrough]]
+#elif __GNUC__ >= 7 && !defined(__clang__)
+#define FALLTHROUGH __attribute__((fallthrough))
+#else
+/* clang-format off */
+#define FALLTHROUGH do {} while (0) /* FALLTHROUGH */
+/* clang-format on */
+#endif
 
 #if HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR && HAVE_FUNC_ATTRIBUTE_DESTRUCTOR
 #define ISC_CONSTRUCTOR __attribute__((constructor))
@@ -79,7 +105,7 @@
 	do {                           \
 		union {                \
 			const void *k; \
-			void	     *v; \
+			void	   *v; \
 		} _u;                  \
 		_u.k = konst;          \
 		var = _u.v;            \
@@ -198,16 +224,6 @@
  * Performance
  */
 
-#ifdef HAVE_BUILTIN_UNREACHABLE
-#define ISC_UNREACHABLE() __builtin_unreachable();
-#else /* ifdef HAVE_BUILTIN_UNREACHABLE */
-#define ISC_UNREACHABLE()
-#endif /* ifdef HAVE_BUILTIN_UNREACHABLE */
-
-#if !defined(__has_feature)
-#define __has_feature(x) 0
-#endif /* if !defined(__has_feature) */
-
 /* GCC defines __SANITIZE_ADDRESS__, so reuse the macro for clang */
 #if __has_feature(address_sanitizer)
 #define __SANITIZE_ADDRESS__ 1
@@ -262,6 +278,8 @@ mock_assert(const int result, const char *const expression,
 	((!(expression))                                                      \
 		 ? (mock_assert(0, #expression, __FILE__, __LINE__), abort()) \
 		 : (void)0)
+#define UNREACHABLE() \
+	(mock_assert(0, "unreachable", __FILE__, __LINE__), abort())
 #define _assert_true(c, e, f, l) \
 	((c) ? (void)0 : (_assert_true(0, e, f, l), abort()))
 #define _assert_int_equal(a, b, f, l) \
@@ -284,29 +302,46 @@ mock_assert(const int result, const char *const expression,
 /*% Invariant Assertion */
 #define INVARIANT(e) ISC_INVARIANT(e)
 
+#define UNREACHABLE() ISC_UNREACHABLE()
+
 #endif /* UNIT_TESTING */
 
 /*
  * Errors
  */
-#include <isc/error.h> /* Contractual promise. */
+#include <isc/error.h>	/* Contractual promise. */
+#include <isc/strerr.h> /* for ISC_STRERRORSIZE */
 
-/*% Unexpected Error */
-#define UNEXPECTED_ERROR isc_error_unexpected
-/*% Fatal Error */
-#define FATAL_ERROR isc_error_fatal
+#define UNEXPECTED_ERROR(...) \
+	isc_error_unexpected(__FILE__, __LINE__, __func__, __VA_ARGS__)
+
+#define FATAL_ERROR(...) \
+	isc_error_fatal(__FILE__, __LINE__, __func__, __VA_ARGS__)
+
+#define REPORT_SYSERROR(report, err, fmt, ...)                        \
+	{                                                             \
+		char strerr[ISC_STRERRORSIZE];                        \
+		strerror_r(err, strerr, sizeof(strerr));              \
+		report(__FILE__, __LINE__, __func__, fmt ": %s (%d)", \
+		       ##__VA_ARGS__, strerr, err);                   \
+	}
+
+#define UNEXPECTED_SYSERROR(err, ...) \
+	REPORT_SYSERROR(isc_error_unexpected, err, __VA_ARGS__)
+
+#define FATAL_SYSERROR(err, ...) \
+	REPORT_SYSERROR(isc_error_fatal, err, __VA_ARGS__)
 
 #ifdef UNIT_TESTING
 
-#define RUNTIME_CHECK(expression)                                             \
-	((!(expression))                                                      \
-		 ? (mock_assert(0, #expression, __FILE__, __LINE__), abort()) \
-		 : (void)0)
+#define RUNTIME_CHECK(cond) \
+	((cond) ? (void)0   \
+		: (mock_assert(0, #cond, __FILE__, __LINE__), abort()))
 
 #else /* UNIT_TESTING */
 
-/*% Runtime Check */
-#define RUNTIME_CHECK(cond) ISC_ERROR_RUNTIMECHECK(cond)
+#define RUNTIME_CHECK(cond) \
+	((cond) ? (void)0 : FATAL_ERROR("RUNTIME_CHECK(%s) failed", #cond))
 
 #endif /* UNIT_TESTING */
 

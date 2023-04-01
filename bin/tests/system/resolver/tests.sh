@@ -569,8 +569,12 @@ sleep "${ttl1:-0}"
 dig_with_opts @10.53.0.5 fetchall.tld any > dig.out.2.${n} || ret=1
 ttl2=$(awk '/"A" "short" "ttl"/ { print $2 }' dig.out.2.${n})
 sleep 1
-# check that the nameserver is still alive
+# check that prefetch occurred;
+# note that only one record is prefetched, which is the TXT record in this case,
+# because of the order of the records in the cache
 dig_with_opts @10.53.0.5 fetchall.tld any > dig.out.3.${n} || ret=1
+ttl3=$(awk '/"A" "short" "ttl"/ { print $2 }' dig.out.3.${n})
+test "${ttl3:-0}" -gt "${ttl2:-1}" || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
@@ -832,31 +836,41 @@ grep "1\.2\.3\.4" dig.ns5.out.${n} > /dev/null && ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
-n=$((n+1))
-echo_i "check that SERVFAIL is returned for an empty question section via TCP ($n)"
-ret=0
-nextpart ns5/named.run > /dev/null
-# bind to local address so that addresses in log messages are consistent
-# between platforms
-dig_with_opts @10.53.0.5 -b 10.53.0.5 tcpalso.no-questions. a +tries=2 +timeout=15 > dig.ns5.out.${n} || ret=1
-grep "status: SERVFAIL" dig.ns5.out.${n} > /dev/null || ret=1
-check_namedrun() {
-nextpartpeek ns5/named.run > nextpart.out.${n}
-grep 'resolving tcpalso.no-questions/A for [^:]*: empty question section, accepting it anyway as TC=1' nextpart.out.${n} > /dev/null || return 1
-grep '(tcpalso.no-questions/A): connecting via TCP' nextpart.out.${n} > /dev/null || return 1
-grep 'resolving tcpalso.no-questions/A for [^:]*: empty question section$' nextpart.out.${n} > /dev/null || return 1
-grep '(tcpalso.no-questions/A): nextitem' nextpart.out.${n} > /dev/null || return 1
-return 0
-}
-retry_quiet 12 check_namedrun || ret=1
-if [ $ret != 0 ]; then echo_i "failed"; fi
-status=$((status + ret))
+if ${FEATURETEST} --enable-querytrace; then
+    n=$((n+1))
+    echo_i "check that SERVFAIL is returned for an empty question section via TCP ($n)"
+    ret=0
+    nextpart ns5/named.run > /dev/null
+    # bind to local address so that addresses in log messages are consistent
+    # between platforms
+    dig_with_opts @10.53.0.5 -b 10.53.0.5 tcpalso.no-questions. a +tries=2 +timeout=15 > dig.ns5.out.${n} || ret=1
+    grep "status: SERVFAIL" dig.ns5.out.${n} > /dev/null || ret=1
+    check_namedrun() {
+    nextpartpeek ns5/named.run > nextpart.out.${n}
+    grep 'resolving tcpalso.no-questions/A for [^:]*: empty question section, accepting it anyway as TC=1' nextpart.out.${n} > /dev/null || return 1
+    grep '(tcpalso.no-questions/A): connecting via TCP' nextpart.out.${n} > /dev/null || return 1
+    grep 'resolving tcpalso.no-questions/A for [^:]*: empty question section$' nextpart.out.${n} > /dev/null || return 1
+    grep '(tcpalso.no-questions/A): nextitem' nextpart.out.${n} > /dev/null || return 1
+    return 0
+    }
+    retry_quiet 12 check_namedrun || ret=1
+    if [ $ret != 0 ]; then echo_i "failed"; fi
+    status=$((status + ret))
+fi
 
 n=$((n+1))
 echo_i "checking SERVFAIL is returned when all authoritative servers return FORMERR ($n)"
 ret=0
 dig_with_opts @10.53.0.5 ns.formerr-to-all. a > dig.ns5.out.${n} || ret=1
 grep "status: SERVFAIL" dig.ns5.out.${n} > /dev/null || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n+1))
+echo_i "checking SERVFAIL is not returned if only some authoritative servers return FORMERR ($n)"
+ret=0
+dig_with_opts @10.53.0.5 ns.partial-formerr. a > dig.ns5.out.${n} || ret=1
+grep "status: SERVFAIL" dig.ns5.out.${n} > /dev/null && ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
@@ -924,6 +938,69 @@ echo_i "check ADB find loops are detected ($n)"
 ret=0
 dig_with_opts +tcp +tries=1 +timeout=5 @10.53.0.1 fake.lame.example.org > dig.out.ns1.${n} || ret=1
 grep "status: SERVFAIL" dig.out.ns1.${n} > /dev/null || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n+1))
+echo_i "check handling of large referrals to unresponsive name servers ($n)"
+ret=0
+dig_with_opts +timeout=15 large-referral.example.net @10.53.0.1 a > dig.out.ns1.test${n} || ret=1
+grep "status: SERVFAIL" dig.out.ns1.test${n} > /dev/null || ret=1
+# Check the total number of findname() calls triggered by a single query
+# for large-referral.example.net/A.
+findname_call_count="$(grep -c "large-referral\.example\.net.*FINDNAME" ns1/named.run)"
+if [ "${findname_call_count}" -gt 1000 ]; then
+	echo_i "failed: ${findname_call_count} (> 1000) findname() calls detected for large-referral.example.net"
+	ret=1
+fi
+# Check whether the limit of NS RRs processed for any delegation
+# encountered was not exceeded.
+if grep -Eq "dns_adb_createfind: started (A|AAAA) fetch for name ns21.fake.redirect.com" ns1/named.run; then
+	echo_i "failed: unexpected address fetch(es) were triggered for ns21.fake.redirect.com"
+	ret=1
+fi
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n+1))
+echo_i "checking query resolution for a domain with a valid glueless delegation chain ($n)"
+ret=0
+rndccmd 10.53.0.1 flush || ret=1
+dig_with_opts foo.bar.sub.tld1 @10.53.0.1 TXT > dig.out.ns1.test${n} || ret=1
+grep "status: NOERROR" dig.out.ns1.test${n} > /dev/null || ret=1
+grep "IN.*TXT.*baz" dig.out.ns1.test${n} > /dev/null || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n+1))
+echo_i "check that correct namespace is chosen for dual-stack-servers ($n)"
+ret=0
+#
+# The two priming queries are needed until we fix dual-stack-servers fully
+#
+dig_with_opts @fd92:7065:b8e:ffff::9 v4.nameserver A > dig.out.prime1.${n} || ret=1
+dig_with_opts @fd92:7065:b8e:ffff::9 v4.nameserver AAAA > dig.out.prime2.${n} || ret=1
+dig_with_opts @fd92:7065:b8e:ffff::9 foo.v4only.net A > dig.out.ns9.${n} || ret=1
+grep "status: NOERROR" dig.out.ns9.${n} > /dev/null || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n+1))
+echo_i "check expired TTLs with qtype * (${n})"
+ret=0
+dig_with_opts +tcp @10.53.0.5 mixedttl.tld any > dig.out.1.${n} || ret=1
+ttl1=$(awk '$1 == "mixedttl.tld." && $4 == "A" { print $2 + 1 }' dig.out.1.${n})
+# sleep TTL + 1 so that record has expired
+sleep "${ttl1:-0}"
+dig_with_opts +tcp @10.53.0.5 mixedttl.tld any > dig.out.2.${n} || ret=1
+# check preconditions
+grep "ANSWER: 3," dig.out.1.${n} > /dev/null || ret=1
+lines=$(awk '$1 == "mixedttl.tld." && $2 > 30 { print }' dig.out.1.${n} | wc -l)
+test ${lines:-1} -ne 0 && ret=1
+# check behaviour (there may be 1 answer on very slow machines)
+grep "ANSWER: [12]," dig.out.2.${n} > /dev/null || ret=1
+lines=$(awk '$1 == "mixedttl.tld." && $2 > 30 { print }' dig.out.2.${n} | wc -l)
+test ${lines:-1} -ne 0 && ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 

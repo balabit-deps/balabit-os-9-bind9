@@ -227,6 +227,9 @@ free_namelist(dns_message_t *msg, dns_namelist_t *namelist) {
 		while (!ISC_LIST_EMPTY(name->list)) {
 			set = ISC_LIST_HEAD(name->list);
 			ISC_LIST_UNLINK(name->list, set, link);
+			if (dns_rdataset_isassociated(set)) {
+				dns_rdataset_disassociate(set);
+			}
 			dns_message_puttemprdataset(msg, &set);
 		}
 		dns_message_puttempname(msg, &name);
@@ -770,7 +773,8 @@ dns_tkey_processquery(dns_message_t *msg, dns_tkeyctx_t *tctx,
 	result = dns_message_signer(msg, &tsigner);
 	if (result != ISC_R_SUCCESS) {
 		if (tkeyin.mode == DNS_TKEYMODE_GSSAPI &&
-		    result == ISC_R_NOTFOUND) {
+		    result == ISC_R_NOTFOUND)
+		{
 			signer = NULL;
 		} else {
 			tkey_log("dns_tkey_processquery: query was not "
@@ -1016,6 +1020,18 @@ failure:
 	}
 	if (dynbuf != NULL) {
 		isc_buffer_free(&dynbuf);
+	}
+	if (rdata != NULL) {
+		dns_message_puttemprdata(msg, &rdata);
+	}
+	if (tkeylist != NULL) {
+		dns_message_puttemprdatalist(msg, &tkeylist);
+	}
+	if (tkeyset != NULL) {
+		if (dns_rdataset_isassociated(tkeyset)) {
+			dns_rdataset_disassociate(tkeyset);
+		}
+		dns_message_puttemprdataset(msg, &tkeyset);
 	}
 	return (result);
 }

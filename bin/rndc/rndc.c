@@ -80,9 +80,9 @@ static isccc_region_t secret;
 static bool failed = false;
 static bool c_flag = false;
 static isc_mem_t *rndc_mctx = NULL;
-static atomic_uint_fast32_t sends = ATOMIC_VAR_INIT(0);
-static atomic_uint_fast32_t recvs = ATOMIC_VAR_INIT(0);
-static atomic_uint_fast32_t connects = ATOMIC_VAR_INIT(0);
+static atomic_uint_fast32_t sends = 0;
+static atomic_uint_fast32_t recvs = 0;
+static atomic_uint_fast32_t connects = 0;
 static char *command = NULL;
 static char *args = NULL;
 static char program[256];
@@ -96,7 +96,7 @@ static isc_nmhandle_t *recvnonce_handle = NULL;
 static void
 rndc_startconnect(isc_sockaddr_t *addr);
 
-ISC_NORETURN static void
+noreturn static void
 usage(int status);
 
 static void
@@ -307,6 +307,7 @@ rndc_senddone(isc_nmhandle_t *handle, isc_result_t result, void *arg) {
 	    atomic_load_acquire(&recvs) == 0)
 	{
 		shuttingdown = true;
+		isc_task_detach(&rndc_task);
 		isc_app_shutdown();
 	}
 }
@@ -388,10 +389,11 @@ rndc_recvdone(isc_nmhandle_t *handle, isc_result_t result, void *arg) {
 	REQUIRE(recvdone_handle == handle);
 	isc_nmhandle_detach(&recvdone_handle);
 
-	if (atomic_load_acquire(&sends) == 0 &&
-	    atomic_fetch_sub_release(&recvs, 1) == 1)
+	if (atomic_fetch_sub_release(&recvs, 1) == 1 &&
+	    atomic_load_acquire(&sends) == 0)
 	{
 		shuttingdown = true;
+		isc_task_detach(&rndc_task);
 		isc_app_shutdown();
 	}
 }
@@ -592,8 +594,7 @@ rndc_startconnect(isc_sockaddr_t *addr) {
 		 */
 		fatal("UNIX domain sockets not currently supported");
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	atomic_fetch_add_relaxed(&connects, 1);
@@ -688,7 +689,8 @@ parse_config(isc_mem_t *mctx, isc_log_t *log, const char *keyname,
 		(void)cfg_map_get(config, "server", &servers);
 		if (servers != NULL) {
 			for (elt = cfg_list_first(servers); elt != NULL;
-			     elt = cfg_list_next(elt)) {
+			     elt = cfg_list_next(elt))
+			{
 				const char *name = NULL;
 				server = cfg_listelt_value(elt);
 				name = cfg_obj_asstring(
@@ -725,7 +727,8 @@ parse_config(isc_mem_t *mctx, isc_log_t *log, const char *keyname,
 	} else {
 		DO("get config key list", cfg_map_get(config, "key", &keys));
 		for (elt = cfg_list_first(keys); elt != NULL;
-		     elt = cfg_list_next(elt)) {
+		     elt = cfg_list_next(elt))
+		{
 			const char *name = NULL;
 
 			key = cfg_listelt_value(elt);
@@ -940,11 +943,13 @@ main(int argc, char **argv) {
 			break;
 		case 'b':
 			if (inet_pton(AF_INET, isc_commandline_argument, &in) ==
-			    1) {
+			    1)
+			{
 				isc_sockaddr_fromin(&local4, &in, 0);
 				local4set = true;
 			} else if (inet_pton(AF_INET6, isc_commandline_argument,
-					     &in6) == 1) {
+					     &in6) == 1)
+			{
 				isc_sockaddr_fromin6(&local6, &in6, 0);
 				local6set = true;
 			}
@@ -1001,7 +1006,7 @@ main(int argc, char **argv) {
 					program, isc_commandline_option);
 				usage(1);
 			}
-		/* FALLTHROUGH */
+			FALLTHROUGH;
 		case 'h':
 			usage(0);
 			break;
@@ -1082,7 +1087,6 @@ main(int argc, char **argv) {
 		fatal("isc_app_run() failed: %s", isc_result_totext(result));
 	}
 
-	isc_task_detach(&rndc_task);
 	isc_managers_destroy(&netmgr, &taskmgr, NULL);
 
 	/*

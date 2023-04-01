@@ -365,7 +365,7 @@ foreach_rrset(dns_db_t *db, dns_dbversion_t *ver, dns_name_t *name,
 	}
 
 	iter = NULL;
-	result = dns_db_allrdatasets(db, node, ver, (isc_stdtime_t)0, &iter);
+	result = dns_db_allrdatasets(db, node, ver, 0, (isc_stdtime_t)0, &iter);
 	if (result != ISC_R_SUCCESS) {
 		goto cleanup_node;
 	}
@@ -1223,7 +1223,8 @@ add_sigs(dns_update_log_t *log, dns_zone_t *zone, dns_db_t *db,
 				continue;
 			} else if (zsk &&
 				   !dst_key_is_signing(keys[i], DST_BOOL_ZSK,
-						       inception, &when)) {
+						       inception, &when))
+			{
 				/*
 				 * This key is not active for zone-signing.
 				 */
@@ -1338,7 +1339,8 @@ del_keysigs(dns_db_t *db, dns_dbversion_t *ver, dns_name_t *name,
 			if (rrsig.keyid == dst_key_id(keys[i])) {
 				found = true;
 				if (!dst_key_isprivate(keys[i]) &&
-				    !dst_key_inactive(keys[i])) {
+				    !dst_key_inactive(keys[i]))
+				{
 					/*
 					 * The re-signing code in zone.c
 					 * will mark this as offline.
@@ -1395,7 +1397,7 @@ add_exposed_sigs(dns_update_log_t *log, dns_zone_t *zone, dns_db_t *db,
 	}
 
 	iter = NULL;
-	result = dns_db_allrdatasets(db, node, ver, (isc_stdtime_t)0, &iter);
+	result = dns_db_allrdatasets(db, node, ver, 0, (isc_stdtime_t)0, &iter);
 	if (result != ISC_R_SUCCESS) {
 		goto cleanup_node;
 	}
@@ -1417,7 +1419,8 @@ add_exposed_sigs(dns_update_log_t *log, dns_zone_t *zone, dns_db_t *db,
 		 * as they are handled elsewhere.
 		 */
 		if ((type == dns_rdatatype_rrsig) ||
-		    (cut && type != dns_rdatatype_ds)) {
+		    (cut && type != dns_rdatatype_ds))
+		{
 			continue;
 		}
 		result = rrset_exists(db, ver, name, dns_rdatatype_rrsig, type,
@@ -1695,7 +1698,8 @@ next_state:
 				/* Skip any other updates to the same RRset. */
 				while (t != NULL &&
 				       dns_name_equal(&t->name, name) &&
-				       t->rdata.type == type) {
+				       t->rdata.type == type)
+				{
 					next = ISC_LIST_NEXT(t, link);
 					ISC_LIST_UNLINK(diff->tuples, t, link);
 					ISC_LIST_APPEND(state->work.tuples, t,
@@ -1711,7 +1715,7 @@ next_state:
 
 		update_log(log, zone, ISC_LOG_DEBUG(3),
 			   "updated data signatures");
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case remove_orphaned:
 		state->state = remove_orphaned;
 
@@ -1743,7 +1747,7 @@ next_state:
 		update_log(log, zone, ISC_LOG_DEBUG(3),
 			   "rebuilding NSEC chain");
 
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case build_chain:
 		state->state = build_chain;
 		/*
@@ -1817,7 +1821,8 @@ next_state:
 					   dns_rdatatype_dname, 0,
 					   &dname_exists));
 			if ((ns_exists || dname_exists) ==
-			    (ns_existed || dname_existed)) {
+			    (ns_existed || dname_existed))
+			{
 				continue;
 			}
 			/*
@@ -1833,7 +1838,7 @@ next_state:
 
 		CHECK(uniqify_name_list(&state->affected));
 
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case process_nsec:
 		state->state = process_nsec;
 
@@ -1949,7 +1954,7 @@ next_state:
 		update_log(log, zone, ISC_LOG_DEBUG(3),
 			   "signing rebuilt NSEC chain");
 
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case sign_nsec:
 		state->state = sign_nsec;
 		/* Update RRSIG NSECs. */
@@ -1970,8 +1975,7 @@ next_state:
 					       state->keyset_kskonly));
 				sigs++;
 			} else {
-				INSIST(0);
-				ISC_UNREACHABLE();
+				UNREACHABLE();
 			}
 			ISC_LIST_UNLINK(state->nsec_mindiff.tuples, t, link);
 			ISC_LIST_APPEND(state->work.tuples, t, link);
@@ -1981,7 +1985,7 @@ next_state:
 		}
 		ISC_LIST_APPENDLIST(state->nsec_mindiff.tuples,
 				    state->work.tuples, link);
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case update_nsec3:
 		state->state = update_nsec3;
 
@@ -2028,7 +2032,8 @@ next_state:
 			bool exists, existed;
 
 			if (t->rdata.type == dns_rdatatype_nsec ||
-			    t->rdata.type == dns_rdatatype_rrsig) {
+			    t->rdata.type == dns_rdatatype_rrsig)
+			{
 				t = ISC_LIST_NEXT(t, link);
 				continue;
 			}
@@ -2073,7 +2078,7 @@ next_state:
 			}
 		}
 
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case process_nsec3:
 		state->state = process_nsec3;
 		while ((t = ISC_LIST_HEAD(state->affected.tuples)) != NULL) {
@@ -2124,7 +2129,7 @@ next_state:
 		update_log(log, zone, ISC_LOG_DEBUG(3),
 			   "signing rebuilt NSEC3 chain");
 
-	/* FALLTHROUGH */
+		FALLTHROUGH;
 	case sign_nsec3:
 		state->state = sign_nsec3;
 		/* Update RRSIG NSEC3s. */
@@ -2145,8 +2150,7 @@ next_state:
 					       state->keyset_kskonly));
 				sigs++;
 			} else {
-				INSIST(0);
-				ISC_UNREACHABLE();
+				UNREACHABLE();
 			}
 			ISC_LIST_UNLINK(state->nsec_mindiff.tuples, t, link);
 			ISC_LIST_APPEND(state->work.tuples, t, link);
@@ -2173,8 +2177,7 @@ next_state:
 		INSIST(ISC_LIST_EMPTY(state->nsec_mindiff.tuples));
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 failure:
@@ -2234,8 +2237,7 @@ dns__update_soaserial(uint32_t serial, dns_updatemethod_t method) {
 		}
 		return (serial);
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 }
 
@@ -2266,8 +2268,7 @@ dns_update_soaserial(uint32_t serial, dns_updatemethod_t method,
 		}
 		break;
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	if (used != NULL) {

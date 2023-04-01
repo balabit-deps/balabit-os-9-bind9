@@ -297,7 +297,7 @@ towire_compare(const void *av, const void *bv) {
 	return (a->key - b->key);
 }
 
-static inline void
+static void
 swap_rdata(dns_rdata_t *in, unsigned int a, unsigned int b) {
 	dns_rdata_t rdata = in[a];
 	in[a] = in[b];
@@ -413,7 +413,8 @@ towiresorted(dns_rdataset_t *rdataset, const dns_name_t *owner_name,
 		}
 
 		if (want_cyclic &&
-		    (rdataset->count != DNS_RDATASET_COUNT_UNDEFINED)) {
+		    (rdataset->count != DNS_RDATASET_COUNT_UNDEFINED))
+		{
 			j = rdataset->count % count;
 		}
 

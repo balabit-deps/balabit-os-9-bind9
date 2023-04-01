@@ -20,7 +20,6 @@
 #include <isc/backtrace.h>
 #include <isc/print.h>
 #include <isc/result.h>
-#include <isc/strerr.h>
 
 /*
  * The maximum number of stack frames to dump on assertion failure.
@@ -48,7 +47,6 @@ isc_assertion_failed(const char *file, int line, isc_assertiontype_t type,
 		     const char *cond) {
 	isc_assertion_failed_cb(file, line, type, cond);
 	abort();
-	/* NOTREACHED */
 }
 
 /*% Set callback. */

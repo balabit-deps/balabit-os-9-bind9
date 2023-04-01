@@ -36,6 +36,7 @@
 #include <isc/sockaddr.h>
 #include <isc/string.h>
 #include <isc/task.h>
+#include <isc/time.h>
 #include <isc/util.h>
 
 #include <dns/byaddr.h>
@@ -84,10 +85,6 @@
 #define UDPTIMEOUT 5
 #define MAXTRIES   0xffffffff
 
-#define NS_PER_US  1000	   /*%< Nanoseconds per microsecond. */
-#define US_PER_SEC 1000000 /*%< Microseconds per second. */
-#define US_PER_MS  1000	   /*%< Microseconds per millisecond. */
-
 static isc_mem_t *mctx = NULL;
 static dns_requestmgr_t *requestmgr = NULL;
 static const char *batchname = NULL;
@@ -119,7 +116,6 @@ static isc_sockaddr_t srcaddr;
 static char *server = NULL;
 static isc_sockaddr_t dstaddr;
 static in_port_t port = 53;
-static isc_dscp_t dscp = -1;
 static unsigned char cookie_secret[33];
 static int onfly = 0;
 static char hexcookie[81];
@@ -330,7 +326,7 @@ recvresponse(isc_task_t *task, isc_event_t *event) {
 			if (hash != NULL) {
 				*hash = '\0';
 			}
-			printf("    response_address: %s\n", sockstr);
+			printf("    response_address: \"%s\"\n", sockstr);
 			printf("    response_port: %u\n", sport);
 		}
 
@@ -341,7 +337,7 @@ recvresponse(isc_task_t *task, isc_event_t *event) {
 			if (hash != NULL) {
 				*hash = '\0';
 			}
-			printf("    query_address: %s\n", sockstr);
+			printf("    query_address: \"%s\"\n", sockstr);
 			printf("    query_port: %u\n", sport);
 		}
 
@@ -477,7 +473,8 @@ repopulate_buffer:
 						dns_rdataset_next(rdataset);
 					dns_rdata_reset(&rdata);
 					if (strlen("\n") >=
-					    isc_buffer_availablelength(buf)) {
+					    isc_buffer_availablelength(buf))
+					{
 						goto buftoosmall;
 					}
 					isc_buffer_putstr(buf, "\n");
@@ -754,12 +751,13 @@ sendquery(struct query *query, isc_task_t *task) {
 	if (tcp_mode) {
 		options |= DNS_REQUESTOPT_TCP;
 	}
+
 	request = NULL;
-	result = dns_request_createvia(
-		requestmgr, message, have_src ? &srcaddr : NULL, &dstaddr, dscp,
+	result = dns_request_create(
+		requestmgr, message, have_src ? &srcaddr : NULL, &dstaddr,
 		options, NULL, query->timeout, query->udptimeout,
 		query->udpretries, task, recvresponse, message, &request);
-	CHECK("dns_request_createvia", result);
+	CHECK("dns_request_create", result);
 
 	return (ISC_R_SUCCESS);
 }
@@ -783,7 +781,7 @@ sendqueries(isc_task_t *task, isc_event_t *event) {
 	return;
 }
 
-ISC_NORETURN static void
+noreturn static void
 usage(void);
 
 static void
@@ -815,9 +813,6 @@ help(void) {
 	       "                 -p port             (specify port number)\n"
 	       "                 -m                  (enable memory usage "
 	       "debugging)\n"
-	       "                 +[no]dscp[=###]     (Set the DSCP value to "
-	       "### "
-	       "[0..63])\n"
 	       "                 +[no]vc             (TCP mode)\n"
 	       "                 +[no]tcp            (TCP mode, alternate "
 	       "syntax)\n"
@@ -894,7 +889,7 @@ help(void) {
 	       "Server ID)\n");
 }
 
-ISC_NORETURN static void
+noreturn static void
 fatal(const char *format, ...) ISC_FORMAT_PRINTF(1, 2);
 
 static void
@@ -1322,18 +1317,10 @@ plus_option(char *option, struct query *query, bool global) {
 			query->dnssec = state;
 			break;
 		case 's': /* dscp */
+			/* obsolete */
 			FULLCHECK("dscp");
-			GLOBAL();
-			if (!state) {
-				dscp = -1;
-				break;
-			}
-			if (value == NULL) {
-				goto need_value;
-			}
-			result = parse_uint(&num, value, 0x3f, "DSCP");
-			CHECK("parse_uint(DSCP)", result);
-			dscp = num;
+			fprintf(stderr, ";; +dscp option is obsolete "
+					"and has no effect");
 			break;
 		default:
 			goto invalid_option;
@@ -1458,7 +1445,6 @@ plus_option(char *option, struct query *query, bool global) {
 				result = parse_uint(&query->udpretries, value,
 						    MAXTRIES - 1, "udpretries");
 				CHECK("parse_uint(udpretries)", result);
-				query->udpretries++;
 				break;
 			default:
 				goto invalid_option;
@@ -1579,8 +1565,8 @@ plus_option(char *option, struct query *query, bool global) {
 			result = parse_uint(&query->udpretries, value, MAXTRIES,
 					    "udpretries");
 			CHECK("parse_uint(udpretries)", result);
-			if (query->udpretries == 0) {
-				query->udpretries = 1;
+			if (query->udpretries > 0) {
+				query->udpretries -= 1;
 			}
 			break;
 		case 't':
@@ -1698,7 +1684,7 @@ dash_option(const char *option, char *next, struct query *query, bool global,
 				have_ipv6 = false;
 			} else {
 				fatal("can't find IPv4 networking");
-				/* NOTREACHED */
+				UNREACHABLE();
 				return (false);
 			}
 			break;
@@ -1709,7 +1695,7 @@ dash_option(const char *option, char *next, struct query *query, bool global,
 				have_ipv4 = false;
 			} else {
 				fatal("can't find IPv6 networking");
-				/* NOTREACHED */
+				UNREACHABLE();
 				return (false);
 			}
 			break;
@@ -1817,7 +1803,7 @@ dash_option(const char *option, char *next, struct query *query, bool global,
 		fprintf(stderr, "Invalid option: -%s\n", option);
 		usage();
 	}
-	/* NOTREACHED */
+	UNREACHABLE();
 	return (false);
 }
 
@@ -1890,7 +1876,8 @@ preparse_args(int argc, char **argv) {
 		}
 		/* Look for dash value option. */
 		if (strpbrk(option, dash_opts) != &option[0] ||
-		    strlen(option) > 1U) {
+		    strlen(option) > 1U)
+		{
 			/* Error or value in option. */
 			continue;
 		}
@@ -1947,7 +1934,7 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 		default_query.ecs_addr = NULL;
 		default_query.timeout = 0;
 		default_query.udptimeout = 0;
-		default_query.udpretries = 3;
+		default_query.udpretries = 2;
 		ISC_LINK_INIT(&default_query, link);
 	}
 
@@ -1977,13 +1964,15 @@ parse_args(bool is_batchfile, int argc, char **argv) {
 
 			if (rc <= 1) {
 				if (dash_option(&rv[0][1], NULL, query, global,
-						&setname)) {
+						&setname))
+				{
 					rc--;
 					rv++;
 				}
 			} else {
 				if (dash_option(&rv[0][1], rv[1], query, global,
-						&setname)) {
+						&setname))
+				{
 					rc--;
 					rv++;
 				}

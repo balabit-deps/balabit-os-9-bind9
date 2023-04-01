@@ -152,7 +152,7 @@ parse_options(int argc, char **argv) {
 			break;
 
 		default:
-			INSIST(0);
+			UNREACHABLE();
 		}
 	}
 
@@ -202,7 +202,7 @@ teardown(void) {
 }
 
 static void
-yield(void) {
+test_server_yield(void) {
 	sigset_t sset;
 	int sig;
 
@@ -302,12 +302,11 @@ run(void) {
 	} break;
 #endif
 	default:
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 	REQUIRE(result == ISC_R_SUCCESS);
 
-	yield();
+	test_server_yield();
 
 	isc_nm_stoplistening(sock);
 	isc_nmsocket_close(&sock);

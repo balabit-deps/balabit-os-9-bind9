@@ -330,7 +330,7 @@ plugin_register(const char *parameters, const void *cfg, const char *cfg_file,
 		unsigned long cfg_line, isc_mem_t *mctx, isc_log_t *lctx,
 		void *actx, ns_hooktable_t *hooktable, void **instp) {
 	filter_instance_t *inst = NULL;
-	isc_result_t result;
+	isc_result_t result = ISC_R_SUCCESS;
 
 	isc_log_write(lctx, NS_LOGCATEGORY_GENERAL, NS_LOGMODULE_HOOKS,
 		      ISC_LOG_INFO,
@@ -347,7 +347,7 @@ plugin_register(const char *parameters, const void *cfg, const char *cfg_file,
 				       cfg_line, mctx, lctx, actx));
 	}
 
-	CHECK(isc_ht_init(&inst->ht, mctx, 16));
+	isc_ht_init(&inst->ht, mctx, 16, ISC_HT_CASE_SENSITIVE);
 	isc_mutex_init(&inst->hlock);
 
 	/*
@@ -619,7 +619,8 @@ process_section(const section_filter_t *filter) {
 		}
 
 		if (section == DNS_SECTION_ANSWER ||
-		    section == DNS_SECTION_AUTHORITY) {
+		    section == DNS_SECTION_AUTHORITY)
+		{
 			message->flags &= ~DNS_MESSAGEFLAG_AD;
 		}
 	}
@@ -669,7 +670,8 @@ filter_prep_response_begin(void *arg, void *cbdata, isc_result_t *resp) {
 		result = ns_client_checkaclsilent(qctx->client, NULL,
 						  inst->a_acl, true);
 		if (result == ISC_R_SUCCESS && inst->v4_a != NONE &&
-		    is_v4_client(qctx->client)) {
+		    is_v4_client(qctx->client))
+		{
 			client_state->mode = inst->v4_a;
 		} else if (result == ISC_R_SUCCESS && inst->v6_a != NONE &&
 			   is_v6_client(qctx->client))

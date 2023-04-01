@@ -164,7 +164,7 @@ isc_result_t
 dns_peer_setkey(dns_peer_t *peer, dns_name_t **keyval);
 
 isc_result_t
-dns_peer_settransfersource(dns_peer_t	      *peer,
+dns_peer_settransfersource(dns_peer_t		*peer,
 			   const isc_sockaddr_t *transfer_source);
 
 isc_result_t
@@ -199,24 +199,6 @@ dns_peer_setquerysource(dns_peer_t *peer, const isc_sockaddr_t *query_source);
 
 isc_result_t
 dns_peer_getquerysource(dns_peer_t *peer, isc_sockaddr_t *query_source);
-
-isc_result_t
-dns_peer_setnotifydscp(dns_peer_t *peer, isc_dscp_t dscp);
-
-isc_result_t
-dns_peer_getnotifydscp(dns_peer_t *peer, isc_dscp_t *dscpp);
-
-isc_result_t
-dns_peer_settransferdscp(dns_peer_t *peer, isc_dscp_t dscp);
-
-isc_result_t
-dns_peer_gettransferdscp(dns_peer_t *peer, isc_dscp_t *dscpp);
-
-isc_result_t
-dns_peer_setquerydscp(dns_peer_t *peer, isc_dscp_t dscp);
-
-isc_result_t
-dns_peer_getquerydscp(dns_peer_t *peer, isc_dscp_t *dscpp);
 
 isc_result_t
 dns_peer_setednsversion(dns_peer_t *peer, uint8_t ednsversion);

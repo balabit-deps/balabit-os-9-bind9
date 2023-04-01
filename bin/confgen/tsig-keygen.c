@@ -54,7 +54,7 @@ const char *progname;
 static enum { progmode_keygen, progmode_confgen } progmode;
 bool verbose = false; /* needed by util.c but not used here */
 
-ISC_NORETURN static void
+noreturn static void
 usage(int status);
 
 static void
@@ -121,14 +121,14 @@ main(int argc, char **argv) {
 	} else if (PROGCMP("ddns-confgen")) {
 		progmode = progmode_confgen;
 	} else {
-		INSIST(0);
-		ISC_UNREACHABLE();
+		UNREACHABLE();
 	}
 
 	isc_commandline_errprint = false;
 
 	while ((ch = isc_commandline_parse(argc, argv, "a:hk:Mmr:qs:y:z:")) !=
-	       -1) {
+	       -1)
+	{
 		switch (ch) {
 		case 'a':
 			algname = isc_commandline_argument;
@@ -209,7 +209,7 @@ main(int argc, char **argv) {
 	}
 
 	/* Use canonical algorithm name */
-	algname = alg_totext(alg);
+	algname = dst_hmac_algorithm_totext(alg);
 
 	isc_mem_create(&mctx);
 
