@@ -1,3 +1,18 @@
+bind9 (1:9.18.12-0ubuntu0.22.04.2) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: Configured cache size limit can be significantly
+    exceeded
+    - debian/patches/CVE-2023-2828.patch: fix cache expiry in
+      lib/dns/rbtdb.c.
+    - CVE-2023-2828
+  * SECURITY UPDATE: Exceeding the recursive-clients quota may cause named
+    to terminate unexpectedly when stale-answer-client-timeout is set to 0
+    - debian/patches/CVE-2023-2911.patch: fix refreshing queries in
+      lib/ns/query.c.
+    - CVE-2023-2911
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 20 Jun 2023 08:29:34 -0400
+
 bind9 (1:9.18.12-0ubuntu0.22.04.1) jammy; urgency=medium
 
   * New upstream releases 9.18.2 - 9.18.12 (LP: #2003586)
