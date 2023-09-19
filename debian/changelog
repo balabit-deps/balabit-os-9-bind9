@@ -1,3 +1,16 @@
+bind9 (1:9.18.12-0ubuntu0.22.04.3) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: DoS via recusive packet parsing
+    - debian/patches/CVE-2023-3341.patch: add a max depth check to
+      lib/isc/include/isc/result.h, lib/isc/result.c, lib/isccc/cc.c.
+    - CVE-2023-3341
+  * SECURITY UPDATE: Dos via DNS-over-TLS queries
+    - debian/patches/CVE-2023-4236.patch: check return code in
+      lib/isc/netmgr/tlsdns.c.
+    - CVE-2023-4236
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 19 Sep 2023 07:21:46 -0400
+
 bind9 (1:9.18.12-0ubuntu0.22.04.2) jammy-security; urgency=medium
 
   * SECURITY UPDATE: Configured cache size limit can be significantly
