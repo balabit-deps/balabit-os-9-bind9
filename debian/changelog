@@ -1,3 +1,50 @@
+bind9 (1:9.18.18-0ubuntu0.22.04.1) jammy; urgency=medium
+
+  * New upstream release 9.18.18 (LP: #2028413)
+    - Updates:
+      + Mark a primary server as temporarily unreachable when a TCP connection
+        response to an SOA query times out, matching behavior of a refused TCP
+        connection.
+      + Mark dialup and heartbeat-interval options as deprecated.
+      + Retry DNS queries without an EDNS COOKIE when the first response is
+        FORMERR with the EDNS COOKIE that was sent originally.
+      + Use NS records for the relaxed QNAME minimization mode to reduce the
+        number of queries from named.
+      + Mark TKEY mode 2 as deprecated.
+      + Mark delegation-only and root-delegation-only as deprecated.
+      + Run RPZ and catalog zone updates on specialized offload threads to
+        reduce blocked query processing time.
+    - Bug Fixes:
+      + Fix assertion failure from processing already-queued queries while
+        server is being reconfigured or cache is being flushed.
+      + Fix failure to load zones containing resource records with a TTL value
+        larger than 86400 seconds when dnssec-policy is set to insecure.
+      + Fix the ability to read HMAC-MD5 key files (LP: #2015176).
+      + Fix stability issues with the catalog zone implementation.
+      + Fix bind9 getting stuck when listen-on statement for HTTP is removed
+        from configuration.
+      + Do not return delegation from cache after stale-answer-client-timeout.
+      + Fix failure to auto-tune clients-per-query limit in some situations.
+      + Fix proper timeouts when using max-transfer-time-in and
+        max-transfer-idle-in statements.
+      + Bring rndc read timeout back to 60 seconds from 30.
+      + Treat libuv returning ISC_R_INVALIDPROTO as a network error.
+      + Clean up empty-non-terminal NSEC3 records.
+      + Fix log file rotation cleanup for absolute file path destinations.
+      + Fix various catalog zone processing crashes.
+      + Fix transfer hang when downloading large zones over TLS.
+      + Fix named crash when adding a new zone into the configuration file for
+        a name which was already configured as member zone for a catalog zone.
+      + Delay DNSSEC key queries until all zones have finished loading.
+    - See https://bind9.readthedocs.io/en/v9.18.18/notes.html for additional
+      information.
+  * d/p/CVE-2023-2828.patch, CVE-2023-2911.patch: Remove - fixed upstream in
+    9.18.16.
+  * d/p/CVE-2023-3341.patch: Refresh, matching upstream, to apply in 9.18.18.
+  * d/t/control, d/t/dyndb-ldap: add DEP8 test (LP: #2032650)
+
+ -- Lena Voytek <lena.voytek@canonical.com>  Wed, 20 Sep 2023 15:15:41 -0700
+
 bind9 (1:9.18.12-0ubuntu0.22.04.3) jammy-security; urgency=medium
 
   * SECURITY UPDATE: DoS via recusive packet parsing

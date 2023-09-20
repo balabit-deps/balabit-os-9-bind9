@@ -11,6 +11,8 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
+set -e
+
 . ../conf.sh
 
 status=0
@@ -160,7 +162,7 @@ do
 		$DIG $DIGOPTS $z @10.53.0.1 nsec > dig.out.ns1.test$n || ret=1
 		grep "NS SOA" dig.out.ns1.test$n > /dev/null || ret=1
 	done
-	for z in bar. example. private.secure.example.
+	for z in bar. example. private.secure.example. optout-with-ent.
 	do
 		$DIG $DIGOPTS $z @10.53.0.2 nsec > dig.out.ns2.test$n || ret=1
 		grep "NS SOA" dig.out.ns2.test$n > /dev/null || ret=1
@@ -179,6 +181,9 @@ done
 n=$((n + 1))
 if [ $ret != 0 ]; then echo_i "done"; fi
 status=$((status + ret))
+
+echo_i "Convert optout-with-ent from nsec to nsec3"
+($RNDCCMD 10.53.0.2 signing -nsec3param 1 1 1 - optout-with-ent 2>&1 | sed 's/^/ns2 /' | cat_i) || ret=1
 
 echo_i "Initial counts of RRSIG expiry fields values for auto signed zones"
 for z in .
@@ -317,12 +322,15 @@ then
     # try to convert nsec-only.example; this should fail due to
     # non-NSEC3 compatible keys
     echo_i "preset nsec3param in unsigned zone via nsupdate ($n)"
-    $NSUPDATE > nsupdate.out 2>&1 <<END
+    ret=0
+    $NSUPDATE > nsupdate.out 2>&1 <<END && ret=1
 server 10.53.0.3 ${PORT}
 zone nsec-only.example.
 update add nsec-only.example. 3600 NSEC3PARAM 1 0 10 BEEF
 send
 END
+    if [ $ret != 0 ]; then echo_i "failed"; fi
+    status=$((status + ret))
 fi
 
 echo_i "checking for nsec3param in unsigned zone ($n)"
@@ -1368,8 +1376,8 @@ check_interval () {
                        if (int(x) > int(interval))
                          exit (1);
                      }
-                     END { if (int(x) > int(interval) || int(x) < int(interval-10)) exit(1) }' interval=$2
-        return $?
+                     END { if (int(x) > int(interval) || int(x) < int(interval-10)) exit(1) }' interval=$2 || return $?
+        return 0
 }
 
 echo_i "checking automatic key reloading interval ($n)"
@@ -1581,11 +1589,11 @@ $RNDCCMD 10.53.0.3 signing -nsec3param 1 1 10 12345678 delzsk.example. > signing
 for i in 0 1 2 3 4 5 6 7 8 9; do
 	_ret=1
 	$DIG $DIGOPTS delzsk.example NSEC3PARAM @10.53.0.3 > dig.out.ns3.1.test$n 2>&1 || ret=1
-	grep "NSEC3PARAM.*12345678" dig.out.ns3.1.test$n > /dev/null 2>&1
-	if [ $? -eq 0 ]; then
+	{ grep "NSEC3PARAM.*12345678" dig.out.ns3.1.test$n > /dev/null 2>&1; rc=$?; } || true
+	if [ $rc -eq 0 ]; then
 		$RNDCCMD 10.53.0.3 signing -list delzsk.example > signing.out.2.test$n 2>&1
-		grep "Creating NSEC3 chain " signing.out.2.test$n > /dev/null 2>&1
-		if [ $? -ne 0 ]; then
+		{ grep "Creating NSEC3 chain " signing.out.2.test$n > /dev/null 2>&1; rc=$?; } || true
+		if [ $rc -ne 0 ]; then
 			_ret=0
 			break
 		fi
@@ -1604,8 +1612,8 @@ $SETTIME -D now-1h $file > settime.out.test$n || ret=1
 for i in 0 1 2 3 4 5 6 7 8 9; do
 	_ret=1
 	$RNDCCMD 10.53.0.3 signing -list delzsk.example > signing.out.3.test$n 2>&1
-	grep "Signing " signing.out.3.test$n > /dev/null 2>&1
-	if [ $? -ne 0 ]; then
+	{ grep "Signing " signing.out.3.test$n > /dev/null 2>&1; rc=$?; } || true
+	if [ $rc -ne 0 ]; then
 		if [ $(grep "Done signing " signing.out.3.test$n | wc -l) -eq 2 ]; then
 			_ret=0
 			break
@@ -1747,6 +1755,46 @@ retry_quiet 1 _cds_delete_nx cdnskey-delete.example. || ret=1
 n=$((n + 1))
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
+
+echo_i "check removal of ENT NSEC3 records when opt out delegations are removed ($n)"
+ret=0
+zone=optout-with-ent
+hash=JTR8R6AVFULU0DQH9I6HNN2KUK5956EL
+# check that NSEC3 for ENT is present
+$DIG $DIGOPTS @10.53.0.2 a "ent.${zone}" > dig.out.pre.ns2.test$n
+grep "status: NOERROR" dig.out.pre.ns2.test$n >/dev/null || ret=1
+grep "ANSWER: 0, AUTHORITY: 4, " dig.out.pre.ns2.test$n > /dev/null || ret=1
+grep "^${hash}.${zone}." dig.out.pre.ns2.test$n > /dev/null || ret=1
+# remove first delegation of two delegations, NSEC3 for ENT should remain.
+(
+echo zone $zone
+echo server 10.53.0.2 "$PORT"
+echo update del sub1.ent.$zone NS
+echo send
+) | $NSUPDATE
+# check that NSEC3 for ENT is still present
+$DIG $DIGOPTS @10.53.0.2 a "ent.${zone}" > dig.out.pre.ns2.test$n
+$DIG $DIGOPTS @10.53.0.2 a "ent.${zone}" > dig.out.mid.ns2.test$n
+grep "status: NOERROR" dig.out.mid.ns2.test$n >/dev/null || ret=1
+grep "ANSWER: 0, AUTHORITY: 4, " dig.out.mid.ns2.test$n > /dev/null || ret=1
+grep "^${hash}.${zone}." dig.out.mid.ns2.test$n > /dev/null || ret=1
+# remove second delegation of two delegations, NSEC3 for ENT should be deleted.
+(
+echo zone $zone
+echo server 10.53.0.2 "$PORT"
+echo update del sub2.ent.$zone NS
+echo send
+) | $NSUPDATE
+# check that NSEC3 for ENT is gone present
+$DIG $DIGOPTS @10.53.0.2 a "ent.${zone}" > dig.out.post.ns2.test$n
+grep "status: NXDOMAIN" dig.out.post.ns2.test$n >/dev/null || ret=1
+grep "ANSWER: 0, AUTHORITY: 4, " dig.out.post.ns2.test$n > /dev/null || ret=1
+grep "^${hash}.${zone}." dig.out.post.ns2.test$n > /dev/null && ret=1
+$DIG $DIGOPTS @10.53.0.2 axfr "${zone}" > dig.out.axfr.ns2.test$n
+grep "^${hash}.${zone}." dig.out.axfr.ns2.test$n > /dev/null && ret=1
+n=$((n+1))
+if [ "$ret" -ne 0 ]; then echo_i "failed"; fi
+status=$((status+ret))
 
 echo_i "exit status: $status"
 [ $status -eq 0 ] || exit 1

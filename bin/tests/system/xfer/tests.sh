@@ -11,10 +11,13 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
+set -e
+
 . ../conf.sh
 
 DIGOPTS="+tcp +noadd +nosea +nostat +noquest +nocomm +nocmd -p ${PORT}"
 RNDCCMD="$RNDC -c ../common/rndc.conf -p ${CONTROLPORT} -s"
+NS_PARAMS="-X named.lock -m record -c named.conf -d 99 -g -U 4 -T maxcachesize=2097152"
 
 status=0
 n=0
@@ -253,7 +256,7 @@ status=$((status+tmp))
 n=$((n+1))
 echo_i "check that a multi-message uncompressable zone transfers ($n)"
 $DIG axfr . -p ${PORT} @10.53.0.4 | grep SOA > axfr.out
-if test `wc -l < axfr.out` != 2
+if test $(wc -l < axfr.out) != 2
 then
 	 echo_i "failed"
          status=$((status+1))
@@ -467,7 +470,7 @@ $RNDCCMD 10.53.0.7 refresh edns-expire 2>&1 | sed 's/^/ns7 /' | cat_i
 sleep 10
 
 # there may be multiple log entries so get the last one.
-expire=`awk '/edns-expire\/IN: got EDNS EXPIRE of/ { x=$9 } END { print x }' ns7/named.run`
+expire=$(awk '/edns-expire\/IN: got EDNS EXPIRE of/ { x=$9 } END { print x }' ns7/named.run)
 test ${expire:-0} -gt 0 -a ${expire:-0} -lt 1814400 || {
     echo_i "failed (expire=${expire:-0})"
     status=$((status+1))
@@ -478,13 +481,13 @@ echo_i "test smaller transfer TCP message size ($n)"
 $DIG $DIGOPTS example. @10.53.0.8 axfr \
 	-y key1.:1234abcd8765 > dig.out.msgsize.test$n || status=1
 
-bytes=`wc -c < dig.out.msgsize.test$n`
+bytes=$(wc -c < dig.out.msgsize.test$n)
 if [ $bytes -ne 459357 ]; then
 	echo_i "failed axfr size check"
         status=$((status+1))
 fi
 
-num_messages=`cat ns8/named.run | grep "sending TCP message of" | wc -l`
+num_messages=$(cat ns8/named.run | grep "sending TCP message of" | wc -l)
 if [ $num_messages -le 300 ]; then
 	echo_i "failed transfer message count check"
         status=$((status+1))
@@ -571,6 +574,53 @@ check_xfer_stats() {
 }
 retry_quiet 10 check_xfer_stats || tmp=1
 if test $tmp != 0 ; then echo_i "failed"; fi
+status=$((status+tmp))
+
+n=$((n+1))
+echo_i "test that transfer-source uses port option correctly ($n)"
+tmp=0
+grep "10.53.0.3#${EXTRAPORT1} (primary): query 'primary/SOA/IN' approved" ns6/named.run > /dev/null || tmp=1
+if test $tmp != 0 ; then echo_i "failed"; fi
+status=$((status+tmp))
+
+wait_for_message() (
+	nextpartpeek ns6/named.run > wait_for_message.$n
+	grep -F "$1" wait_for_message.$n >/dev/null
+)
+
+nextpart ns6/named.run > /dev/null
+
+n=$((n+1))
+echo_i "test max-transfer-time-in with 1 second timeout ($n)"
+stop_server ns1
+copy_setports ns1/named2.conf.in ns1/named.conf
+start_server --noclean --restart --port ${PORT} ns1 -- "-D xfer-ns1 $NS_PARAMS -T transferinsecs -T transferslowly"
+sleep 1
+$RNDCCMD 10.53.0.6 retransfer axfr-max-transfer-time 2>&1 | sed 's/^/ns6 /' | cat_i
+tmp=0
+retry_quiet 10 wait_for_message "maximum transfer time exceeded: timed out" || tmp=1
+status=$((status+tmp))
+
+nextpart ns6/named.run > /dev/null
+
+n=$((n+1))
+echo_i "test max-transfer-idle-in with 50 seconds timeout ($n)"
+stop_server ns1
+copy_setports ns1/named3.conf.in ns1/named.conf
+start_server --noclean --restart --port ${PORT} ns1 -- "-D xfer-ns1 $NS_PARAMS -T transferinsecs -T transferstuck"
+sleep 1
+start=$(date +%s)
+$RNDCCMD 10.53.0.6 retransfer axfr-max-idle-time 2>&1 | sed 's/^/ns6 /' | cat_i
+tmp=0
+retry_quiet 60 wait_for_message "maximum idle time exceeded: timed out" || tmp=1
+if [ $tmp -eq 0 ]; then
+	now=$(date +%s)
+	diff=$((now - start))
+	# we expect a timeout in 50 seconds
+	test $diff -lt 50 && tmp=1
+	test $diff -ge 59 && tmp=1
+	if test $tmp != 0 ; then echo_i "unexpected diff value: ${diff}"; fi
+fi
 status=$((status+tmp))
 
 echo_i "exit status: $status"

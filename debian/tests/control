@@ -13,3 +13,12 @@ Restrictions: isolation-container, needs-root
 Depends: bind9,
          bind9-dnsutils,
          bind9-utils
+
+Tests: dyndb-ldap
+Restrictions: isolation-container, needs-root
+Architecture: !i386
+Depends: bind9,
+         bind9-dyndb-ldap,
+         slapd,
+         ldap-utils,
+         dpkg-dev

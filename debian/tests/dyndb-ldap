@@ -1,0 +1,280 @@
+#!/bin/bash
+
+set -e
+
+ldap_suffix="dc=example,dc=internal"
+mydomain="example.internal"
+myhostname="dep8"
+ldap_admin_dn="cn=admin,${ldap_suffix}"
+ldap_admin_pw="secret"
+ldap_bind9_dn="uid=bind9,${ldap_suffix}"
+ldap_bind9_rdn="uid: bind9" # match ldap_bind9_dn
+ldap_bind9_pw="secretagain"
+
+cleanup() {
+    result=$?
+    set +e
+    if [ ${result} -ne 0 ]; then
+        echo "## Something failed, gathering logs"
+        echo
+        echo "## /var/log/syslog:"
+        tail -n 200 /var/log/syslog
+        echo
+        echo "## slapd journal"
+        journalctl -u slapd
+        echo
+        echo "## bind journal"
+        journalctl -u bind
+    fi
+    sed -i '/include.*ldap_zone/d' /etc/bind/named.conf.local
+    rm -f /etc/bind/named.conf.ldap_zone
+}
+
+trap cleanup EXIT
+
+try_reload_apparmor_profile() {
+    local apparmor_profile="${1}"
+    local -i rc=0
+    local arch
+    local vendor
+
+    apparmor_parser -r -W -T "${apparmor_profile}" 2>&1 || rc=$?
+    if [ ${rc} -ne 0 ]; then
+        # This can fail on armhf in the Ubuntu DEP8 infrastructure
+        # because that environment restricts changing apparmor profiles.
+        # (See LP: #2008393)
+        arch=$(dpkg --print-architecture)
+        vendor=$(dpkg-vendor --query Vendor)
+        if [ "${arch}" = "armhf" ] && [ "${vendor}" = "Ubuntu" ]; then
+            echo "WARNING: failed to enforce apparmor profile."
+            echo "On armhf and Ubuntu DEP8 infrastructure, this is not a fatal error."
+            echo "See #2008393 for details."
+            rc=0
+        else
+            echo "ERROR: failed to adjust the slapd apparmor profile for this test."
+        fi
+    fi
+    return ${rc}
+}
+
+adjust_apparmor_profile() {
+    local profile_name="usr.sbin.named"
+    local profile_path="/etc/apparmor.d/${profile_name}"
+
+    if [ -f "${profile_path}" ]; then
+        if aa-status --enabled 2>/dev/null; then
+            # Adjust apparmor so bind9 can connect to slapd's unix socket
+            echo " /run/slapd/ldapi rw," >> "/etc/apparmor.d/local/${profile_name}"
+            try_reload_apparmor_profile "${profile_path}"
+        fi
+    fi
+}
+
+check_slapd_ready() {
+    ldapwhoami -Q -Y EXTERNAL -H ldapi:/// > /dev/null 2>&1
+}
+
+wait_service_ready() {
+    local service="${1}"
+    local check_function="${2}"
+    local -i tries=5
+    echo -n "Waiting for ${service} to be ready "
+    while [ ${tries} -ne 0 ]; do
+        echo -n "."
+        if "${check_function}"; then
+            echo
+            break
+        fi
+        tries=$((tries-1))
+        sleep 1s
+    done
+    if [ ${tries} -eq 0 ]; then
+        echo "ERROR: ${service} is not ready"
+        return 1
+    fi
+}
+
+setup_slapd() {
+    local domain="$1"
+    local password="$2"
+    # MUST use REAL TABS as delimiters below!
+    debconf-set-selections << EOF
+slapd	slapd/domain	string	${domain}
+slapd	shared/organization	string	${domain}
+slapd	slapd/password1	password	${password}
+slapd	slapd/password2	password	${password}
+EOF
+    rm -rf /var/backups/*slapd* /var/backups/unknown*ldapdb
+    dpkg-reconfigure -fnoninteractive -pcritical slapd 2>&1
+    systemctl restart slapd # http://bugs.debian.org/1010678
+    wait_service_ready slapd check_slapd_ready
+}
+
+configure_slapd_logging() {
+    ldapmodify -Y EXTERNAL -H ldapi:/// 2>&1 <<EOF
+dn: cn=config
+changetype: modify
+replace: olcLogLevel
+olcLogLevel: stats
+
+EOF
+}
+
+create_bind9_uid() {
+    ldapadd -x -D "${ldap_admin_dn}" -w "${ldap_admin_pw}" <<EOF
+dn: ${ldap_bind9_dn}
+${ldap_bind9_rdn}
+objectClass: simpleSecurityObject
+objectClass: account
+userPassword: {CRYPT}x
+
+EOF
+    # this sets the password
+    ldappasswd -x -D "${ldap_admin_dn}" -w "${ldap_admin_pw}" -s "${ldap_bind9_pw}" "${ldap_bind9_dn}"
+
+    # The plugin can change some attributes, like SOA records. For this test,
+    # it's simpler to just allow it to write to the whole dns tree.
+    ldapmodify -Q -Y EXTERNAL -H ldapi:/// <<EOF
+dn: olcDatabase={1}mdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: {1}to dn.subtree="ou=dns,${ldap_suffix}" by dn.exact="${ldap_bind9_dn}" write by * none
+
+EOF
+}
+
+
+load_dyndb_schema() {
+    local schema_file="/usr/share/doc/bind9-dyndb-ldap/schema.ldif.gz"
+
+    # https://wiki.debian.org/LDAP/OpenLDAPSetup#DNS.2FBind9
+	zcat "${schema_file}" |
+        sed 's/^attributeTypes:/olcAttributeTypes:/;
+		     s/^objectClasses:/olcObjectClasses:/;
+		     1,/1.3.6.1.4.1.2428.20.0.0/ {/1.3.6.1.4.1.2428.20.0.0/!s/^/#/};
+		     1idn: cn=dns,cn=schema,cn=config\nobjectClass: olcSchemaConfig' |
+        ldapadd -Q -Y EXTERNAL -H ldapi:/// 
+}
+
+load_syncprov() {
+	ldapmodify -Q -Y EXTERNAL -H ldapi:/// <<EOF
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: syncprov
+
+EOF
+
+	ldapmodify -Q -Y EXTERNAL -H ldapi:/// <<EOF
+dn: olcOverlay=syncprov,olcDatabase={1}mdb,cn=config
+changeType: add
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov
+olcSpCheckpoint: 100 10
+olcSpSessionLog: 100
+
+EOF
+}
+
+load_dns_data() {
+    ldapadd -x -D "${ldap_admin_dn}" -w "${ldap_admin_pw}" <<EOF
+dn: ou=dns,${ldap_suffix}
+objectClass: organizationalUnit
+objectClass: top
+ou: dns
+
+dn: idnsName=${mydomain},ou=dns,${ldap_suffix}
+objectClass: top
+objectClass: idnsZone
+objectClass: idnsRecord
+idnsName: ${mydomain}
+idnsZoneActive: TRUE
+idnsSOAmName: ${myhostname}.${mydomain}
+idnsSOArName: root.${myhostname}.${mydomain}
+idnsSOAserial: 1
+idnsSOArefresh: 10800
+idnsSOAretry: 900
+idnsSOAexpire: 604800
+idnsSOAminimum: 86400
+NSRecord: ${mydomain}.
+ARecord: 192.168.141.5
+
+dn: idnsName=${myhostname},idnsName=${mydomain},ou=dns,${ldap_suffix}
+objectClass: idnsRecord
+objectClass: top
+idnsName: ${myhostname}
+CNAMERecord: ${mydomain}.
+
+dn: idnsName=_ldap._tcp,idnsName=${mydomain},ou=dns,${ldap_suffix}
+objectClass: idnsRecord
+objectClass: top
+idnsName: _ldap._tcp
+SRVRecord: 0 100 389 ${myhostname}
+
+dn: idnsName=somehost,idnsName=${mydomain},ou=dns,${ldap_suffix}
+objectClass: idnsRecord
+objectClass: top
+ARecord: 192.168.141.6
+
+EOF
+}
+
+configure_dyndb() {
+    if ! grep -qE "ldap_zone" /etc/bind/named.conf.local; then
+        echo "include \"/etc/bind/named.conf.ldap_zone\";" >> /etc/bind/named.conf.local
+    fi
+    cat > /etc/bind/named.conf.ldap_zone <<EOF
+dyndb "ldap_zone" "/usr/lib/bind/ldap.so" {
+    uri "ldapi:///";
+    base "ou=dns,${ldap_suffix}";
+    auth_method "simple";
+    bind_dn "${ldap_bind9_dn}";
+    password "${ldap_bind9_pw}";
+};
+EOF
+    chmod 0640 /etc/bind/named.conf.ldap_zone
+    chgrp bind /etc/bind/named.conf.ldap_zone
+    echo "## Restarting bind9"
+    systemctl restart bind9.service
+}
+
+echo "## Adjust bind9's apparmor profile if needed"
+adjust_apparmor_profile
+
+echo "## Setting up slapd"
+setup_slapd "${mydomain}" "${ldap_admin_pw}"
+echo
+
+echo "## Configuring slapd logging"
+configure_slapd_logging
+echo
+
+echo "## Creating bind9 ldap uid"
+create_bind9_uid
+echo
+
+echo "## Loading bind9-dyndb-ldap schema"
+load_dyndb_schema
+echo
+
+echo "## Loading syncproc module"
+load_syncprov
+echo
+
+echo "## Loading DNS sample data"
+load_dns_data
+echo
+
+echo "## Configuring bind9 to use bind9-dyndb-ldap"
+configure_dyndb
+echo
+
+echo "## Checking DNS records"
+host "somehost.${mydomain}" 127.0.0.1
+echo
+host "${myhostname}.${mydomain}" 127.0.0.1
+echo
+host -t srv "_ldap._tcp.${mydomain}" 127.0.0.1
+echo
+host -t soa "${mydomain}" 127.0.0.1

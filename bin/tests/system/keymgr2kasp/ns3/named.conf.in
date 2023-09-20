@@ -24,6 +24,7 @@ options {
 	allow-transfer { any; };
 	recursion no;
 	key-directory ".";
+	dnssec-validation no;
 };
 
 key rndc_key {
@@ -95,4 +96,11 @@ zone "migrate-nomatch-alglen.kasp" {
 	allow-update { any; };
 	dnssec-dnskey-kskonly yes;
 	update-check-ksk yes;
+};
+
+zone "migrate-nomatch-kzc.kasp" {
+	type primary;
+	file "migrate-nomatch-kzc.kasp.db";
+	auto-dnssec maintain;
+	inline-signing yes;
 };

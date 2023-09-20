@@ -1274,7 +1274,7 @@ static cfg_clausedef_t options_clauses[] = {
 #endif /* HAVE_GEOIP2 */
 	{ "geoip-use-ecs", NULL, CFG_CLAUSEFLAG_ANCIENT },
 	{ "has-old-clients", NULL, CFG_CLAUSEFLAG_ANCIENT },
-	{ "heartbeat-interval", &cfg_type_uint32, 0 },
+	{ "heartbeat-interval", &cfg_type_uint32, CFG_CLAUSEFLAG_DEPRECATED },
 	{ "host-statistics", NULL, CFG_CLAUSEFLAG_ANCIENT },
 	{ "host-statistics-max", NULL, CFG_CLAUSEFLAG_ANCIENT },
 	{ "hostname", &cfg_type_qstringornone, 0 },
@@ -1333,7 +1333,7 @@ static cfg_clausedef_t options_clauses[] = {
 	{ "tcp-listen-queue", &cfg_type_uint32, 0 },
 	{ "tcp-receive-buffer", &cfg_type_uint32, 0 },
 	{ "tcp-send-buffer", &cfg_type_uint32, 0 },
-	{ "tkey-dhkey", &cfg_type_tkey_dhkey, 0 },
+	{ "tkey-dhkey", &cfg_type_tkey_dhkey, CFG_CLAUSEFLAG_DEPRECATED },
 	{ "tkey-domain", &cfg_type_qstring, 0 },
 	{ "tkey-gssapi-credential", &cfg_type_qstring, 0 },
 	{ "tkey-gssapi-keytab", &cfg_type_qstring, 0 },
@@ -2143,7 +2143,8 @@ static cfg_clausedef_t view_clauses[] = {
 	{ "response-padding", &cfg_type_resppadding, 0 },
 	{ "response-policy", &cfg_type_rpz, 0 },
 	{ "rfc2308-type1", NULL, CFG_CLAUSEFLAG_ANCIENT },
-	{ "root-delegation-only", &cfg_type_optional_exclude, 0 },
+	{ "root-delegation-only", &cfg_type_optional_exclude,
+	  CFG_CLAUSEFLAG_DEPRECATED },
 	{ "root-key-sentinel", &cfg_type_boolean, 0 },
 	{ "rrset-order", &cfg_type_rrsetorder, 0 },
 	{ "send-cookie", &cfg_type_boolean, 0 },
@@ -2263,7 +2264,8 @@ static cfg_clausedef_t zone_clauses[] = {
 	{ "check-srv-cname", &cfg_type_checkmode, CFG_ZONE_PRIMARY },
 	{ "check-wildcard", &cfg_type_boolean, CFG_ZONE_PRIMARY },
 	{ "dialup", &cfg_type_dialuptype,
-	  CFG_ZONE_PRIMARY | CFG_ZONE_SECONDARY | CFG_ZONE_STUB },
+	  CFG_ZONE_PRIMARY | CFG_ZONE_SECONDARY | CFG_ZONE_STUB |
+		  CFG_CLAUSEFLAG_DEPRECATED },
 	{ "dnssec-dnskey-kskonly", &cfg_type_boolean,
 	  CFG_ZONE_PRIMARY | CFG_ZONE_SECONDARY },
 	{ "dnssec-loadkeys-interval", &cfg_type_uint32,
@@ -2388,7 +2390,8 @@ static cfg_clausedef_t zone_only_clauses[] = {
 	  CFG_ZONE_PRIMARY | CFG_ZONE_SECONDARY | CFG_ZONE_MIRROR |
 		  CFG_ZONE_STUB },
 	{ "delegation-only", &cfg_type_boolean,
-	  CFG_ZONE_HINT | CFG_ZONE_STUB | CFG_ZONE_FORWARD },
+	  CFG_ZONE_HINT | CFG_ZONE_STUB | CFG_ZONE_FORWARD |
+		  CFG_CLAUSEFLAG_DEPRECATED },
 	{ "dlz", &cfg_type_astring,
 	  CFG_ZONE_PRIMARY | CFG_ZONE_SECONDARY | CFG_ZONE_REDIRECT },
 	{ "file", &cfg_type_qstring,
