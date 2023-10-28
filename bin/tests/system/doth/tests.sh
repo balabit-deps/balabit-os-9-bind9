@@ -11,6 +11,8 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
+set -e
+
 # shellcheck disable=SC1091
 . ../conf.sh
 
@@ -96,10 +98,10 @@ n=$((n+1))
 echo_i "testing incoming XoT functionality (from the first secondary) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example; then
-	grep "^;" "dig.out.ns2.example.test$n" | cat_i
 	digcomp example.axfr.good "dig.out.ns2.example.test$n" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns2.example.test$n" | cat_i
 	ret=1
 fi
 if test $ret != 0 ; then echo_i "failed"; fi
@@ -110,8 +112,7 @@ if [ -n "$run_san_tests" ]; then
 	echo_i "testing incoming XoT functionality (from the first secondary, no SubjectAltName, failure expected) ($n)"
 	ret=0
 	if retry_quiet 10 wait_for_tls_xfer 2 example3; then
-		grep "^;" "dig.out.ns2.example3.test$n" | cat_i
-		test -f "ns2/example3.db" && ret=1
+		ret=1
 	else
 		echo_i "timed out waiting for zone transfer"
 	fi
@@ -123,10 +124,10 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, StrictTLS via implicit IP) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example4; then
-	grep "^;" "dig.out.ns2.example4.test$n" | cat_i
-	test -f "ns2/example4.db" || ret=1
+	retry_quiet 5 test -f "ns2/example4.db" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns2.example4.test$n" | cat_i
 	ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -136,10 +137,10 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, StrictTLS via specified IPv4) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example5; then
-	grep "^;" "dig.out.ns2.example5.test$n" | cat_i
-	test -f "ns2/example5.db" || ret=1
+	retry_quiet 5 test -f "ns2/example5.db" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns2.example5.test$n" | cat_i
 	ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -149,10 +150,10 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, StrictTLS via specified IPv6) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example6; then
-	grep "^;" "dig.out.ns2.example6.test$n" | cat_i
-	test -f "ns2/example6.db" || ret=1
+	retry_quiet 5 test -f "ns2/example6.db" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns2.example6.test$n" | cat_i
 	ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -162,8 +163,7 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, wrong hostname, failure expected) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example7; then
-	grep "^;" "dig.out.ns2.example7.test$n" | cat_i
-	test -f "ns2/example7.db" && ret=1
+	ret=1
 else
 	echo_i "timed out waiting for zone transfer"
 fi
@@ -174,8 +174,7 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, expired certificate, failure expected) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example8; then
-	grep "^;" "dig.out.ns2.example8.test$n" | cat_i
-	test -f "ns2/example8.db" && ret=1
+	ret=1
 else
 	echo_i "timed out waiting for zone transfer"
 fi
@@ -186,10 +185,10 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, MutualTLS) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example9; then
-	grep "^;" "dig.out.ns2.example9.test$n" | cat_i
-	test -f "ns2/example9.db" || ret=1
+	retry_quiet 5 test -f "ns2/example9.db" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns2.example9.test$n" | cat_i
 	ret=1
 fi
 if [ $ret != 0 ]; then echo_i "failed"; fi
@@ -199,8 +198,7 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, MutualTLS, no client cert, failure expected) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example10; then
-	grep "^;" "dig.out.ns2.example10.test$n" | cat_i
-	test -f "ns2/example10.db" && ret=1
+	ret=1
 else
 	echo_i "timed out waiting for zone transfer"
 fi
@@ -211,8 +209,7 @@ n=$((n + 1))
 echo_i "testing incoming XoT functionality (from the first secondary, MutualTLS, expired client cert, failure expected) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 2 example11; then
-	grep "^;" "dig.out.ns2.example11.test$n" | cat_i
-	test -f "ns2/example11.db" && ret=1
+	ret=1
 else
 	echo_i "timed out waiting for zone transfer"
 fi
@@ -223,10 +220,10 @@ n=$((n+1))
 echo_i "testing incoming XoT functionality (from the second secondary) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 3 example; then
-	grep "^;" "dig.out.ns3.example.test$n" | cat_i
 	digcomp example.axfr.good "dig.out.ns3.example.test$n" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns3.example.test$n" | cat_i
 	ret=1
 fi
 if test $ret != 0 ; then echo_i "failed"; fi
@@ -236,8 +233,7 @@ n=$((n+1))
 echo_i "testing incoming XoT functionality (from the second secondary, mismatching ciphers, failure expected) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 3 example2; then
-	grep "^;" "dig.out.ns3.example2.test$n" | cat_i
-	test -f "ns3/example2.db" && ret=1
+	ret=1
 else
 	echo_i "timed out waiting for zone transfer"
 fi
@@ -248,10 +244,10 @@ n=$((n+1))
 echo_i "testing incoming XoT functionality (from the third secondary) ($n)"
 ret=0
 if retry_quiet 10 wait_for_tls_xfer 4 example; then
-	grep "^;" "dig.out.ns4.example.test$n" | cat_i
 	digcomp example.axfr.good "dig.out.ns4.example.test$n" || ret=1
 else
 	echo_i "timed out waiting for zone transfer"
+	grep "^;" "dig.out.ns4.example.test$n" | cat_i
 	ret=1
 fi
 if test $ret != 0 ; then echo_i "failed"; fi
@@ -336,7 +332,7 @@ n=$((n + 1))
 echo_i "checking DoH query when ALPN is expected to fail (dot, failure expected) ($n)"
 ret=0
 # shellcheck disable=SC2086
-"$DIG" +https $common_dig_options -p "${TLSPORT}" "$@" @10.53.0.1 . SOA > dig.out.test$n
+"$DIG" +https $common_dig_options -p "${TLSPORT}" "$@" @10.53.0.1 . SOA > dig.out.test$n && ret=1
 grep "ALPN for HTTP/2 failed." dig.out.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -394,7 +390,7 @@ status=$((status + ret))
 n=$((n + 1))
 echo_i "checking DoH query (POST, undefined endpoint, failure expected) ($n)"
 ret=0
-dig_with_https_opts +tries=1 +time=1 +https=/fake @10.53.0.1 . SOA > dig.out.test$n
+dig_with_https_opts +tries=1 +time=1 +https=/fake @10.53.0.1 . SOA > dig.out.test$n && ret=1
 grep "communications error" dig.out.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -402,7 +398,7 @@ status=$((status + ret))
 n=$((n + 1))
 echo_i "checking DoH query via IPv6 (POST, undefined endpoint, failure expected) ($n)"
 ret=0
-dig_with_https_opts -6 +tries=1 +time=1 +https=/fake @fd92:7065:b8e:ffff::1 . SOA > dig.out.test$n
+dig_with_https_opts -6 +tries=1 +time=1 +https=/fake @fd92:7065:b8e:ffff::1 . SOA > dig.out.test$n && ret=1
 grep "communications error" dig.out.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -468,7 +464,7 @@ status=$((status + ret))
 n=$((n + 1))
 echo_i "checking DoH query (GET, undefined endpoint, failure expected) ($n)"
 ret=0
-dig_with_https_opts +tries=1 +time=1 +https-get=/fake @10.53.0.1 . SOA > dig.out.test$n
+dig_with_https_opts +tries=1 +time=1 +https-get=/fake @10.53.0.1 . SOA > dig.out.test$n && ret=1
 grep "communications error" dig.out.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -476,7 +472,7 @@ status=$((status + ret))
 n=$((n + 1))
 echo_i "checking DoH query via IPv6 (GET, undefined endpoint, failure expected) ($n)"
 ret=0
-dig_with_https_opts -6 +tries=1 +time=1 +https-get=/fake @fd92:7065:b8e:ffff::1 . SOA > dig.out.test$n
+dig_with_https_opts -6 +tries=1 +time=1 +https-get=/fake @fd92:7065:b8e:ffff::1 . SOA > dig.out.test$n && ret=1
 grep "communications error" dig.out.test$n > /dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -762,7 +758,7 @@ status=$((status + ret))
 n=$((n + 1))
 echo_i "checking DoH query (client certificate required, failure expected) ($n)"
 ret=0
-dig_with_https_opts +tls-ca="$ca_file" -p "${EXTRAPORT6}" +comm @10.53.0.1 . SOA > dig.out.test$n
+dig_with_https_opts +tls-ca="$ca_file" -p "${EXTRAPORT6}" +comm @10.53.0.1 . SOA > dig.out.test$n && ret=1
 grep "status: NOERROR" dig.out.test$n > /dev/null && ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
@@ -849,8 +845,7 @@ n=$((n + 1))
 echo_i "checking server quotas for both encrypted and unencrypted HTTP ($n)"
 ret=0
 if [ -x "$PYTHON" ]; then
-	BINDHOST="10.53.0.1" "$PYTHON" "$TOP_SRCDIR/bin/tests/system/doth/stress_http_quota.py"
-	ret=$?
+	BINDHOST="10.53.0.1" "$PYTHON" "$TOP_SRCDIR/bin/tests/system/doth/stress_http_quota.py" || ret=$?
 else
 	echo_i "Python is not available. Skipping the test..."
 fi
@@ -859,7 +854,7 @@ status=$((status + ret))
 
 # check whether we can use curl for sending test queries.
 if [ -x "${CURL}" ] ; then
-	CURL_HTTP2="$(${CURL} --version | grep -E '^Features:.* HTTP2( |$)')"
+	CURL_HTTP2="$(${CURL} --version | grep -E '^Features:.* HTTP2( |$)' || true)"
 
 	if [ -n "$CURL_HTTP2" ]; then
 		testcurl=1
@@ -875,7 +870,7 @@ if [ -n "$testcurl" ]; then
 	echo_i "checking max-age for positive answer ($n)"
 	ret=0
 	# use curl to query for 'example/SOA'
-	$CURL -kD headers.$n "https://10.53.0.1:${HTTPSPORT}/dns-query?dns=AAEAAAABAAAAAAAAB2V4YW1wbGUAAAYAAQ" > /dev/null 2>&1
+	$CURL -kD headers.$n "https://10.53.0.1:${HTTPSPORT}/dns-query?dns=AAEAAAABAAAAAAAAB2V4YW1wbGUAAAYAAQ" > /dev/null 2>&1 || ret=1
 	grep "cache-control: max-age=86400" headers.$n > /dev/null || ret=1
 	if [ $ret != 0 ]; then echo_i "failed"; fi
 	status=$((status + ret))
@@ -884,7 +879,7 @@ if [ -n "$testcurl" ]; then
 	echo_i "checking max-age for negative answer ($n)"
 	ret=0
 	# use curl to query for 'fake.example/TXT'
-	$CURL -kD headers.$n "https://10.53.0.1:${HTTPSPORT}/dns-query?dns=AAEAAAABAAAAAAAABGZha2UHZXhhbXBsZQAAEAAB" > /dev/null 2>&1
+	$CURL -kD headers.$n "https://10.53.0.1:${HTTPSPORT}/dns-query?dns=AAEAAAABAAAAAAAABGZha2UHZXhhbXBsZQAAEAAB" > /dev/null 2>&1 || ret=1
 	grep "cache-control: max-age=3600" headers.$n > /dev/null || ret=1
 	if [ $ret != 0 ]; then echo_i "failed"; fi
 	status=$((status + ret))

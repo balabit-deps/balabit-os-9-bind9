@@ -233,7 +233,7 @@ help(void) {
 	       "                 +[no]http-plain[=###]    (DNS over plain HTTP "
 	       "mode) "
 	       "[/]\n"
-	       "                 +[no]https-plain-get      (Use GET instead of "
+	       "                 +[no]http-plain-get      (Use GET instead of "
 	       "default POST method while using plain HTTP)\n"
 	       "                 +[no]identify       (ID responders in short "
 	       "answers)\n"
@@ -2207,6 +2207,7 @@ plus_option(char *option, bool is_batchfile, bool *need_clone,
 
 #if !TARGET_OS_IPHONE
 exit_or_usage:
+	cleanup_openssl_refs();
 	digexit();
 #endif /* if !TARGET_OS_IPHONE */
 }

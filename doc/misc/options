@@ -98,7 +98,7 @@ options {
 	datasize ( default | unlimited | <sizeval> ); // deprecated
 	deny-answer-addresses { <address_match_element>; ... } [ except-from { <string>; ... } ];
 	deny-answer-aliases { <string>; ... } [ except-from { <string>; ... } ];
-	dialup ( notify | notify-passive | passive | refresh | <boolean> );
+	dialup ( notify | notify-passive | passive | refresh | <boolean> ); // deprecated
 	directory <quoted_string>;
 	disable-algorithms <string> { <string>; ... }; // may occur multiple times
 	disable-ds-digests <string> { <string>; ... }; // may occur multiple times
@@ -151,7 +151,7 @@ options {
 	fstrm-set-reopen-interval <duration>; // not configured
 	geoip-directory ( <quoted_string> | none );
 	glue-cache <boolean>; // deprecated
-	heartbeat-interval <integer>;
+	heartbeat-interval <integer>; // deprecated
 	hostname ( <quoted_string> | none );
 	http-listener-clients <integer>;
 	http-port <integer>;
@@ -258,7 +258,7 @@ options {
 	response-padding { <address_match_element>; ... } block-size <integer>;
 	response-policy { zone <string> [ add-soa <boolean> ] [ log <boolean> ] [ max-policy-ttl <duration> ] [ min-update-interval <duration> ] [ policy ( cname | disabled | drop | given | no-op | nodata | nxdomain | passthru | tcp-only <quoted_string> ) ] [ recursive-only <boolean> ] [ nsip-enable <boolean> ] [ nsdname-enable <boolean> ]; ... } [ add-soa <boolean> ] [ break-dnssec <boolean> ] [ max-policy-ttl <duration> ] [ min-update-interval <duration> ] [ min-ns-dots <integer> ] [ nsip-wait-recurse <boolean> ] [ nsdname-wait-recurse <boolean> ] [ qname-wait-recurse <boolean> ] [ recursive-only <boolean> ] [ nsip-enable <boolean> ] [ nsdname-enable <boolean> ] [ dnsrps-enable <boolean> ] [ dnsrps-options { <unspecified-text> } ];
 	reuseport <boolean>;
-	root-delegation-only [ exclude { <string>; ... } ];
+	root-delegation-only [ exclude { <string>; ... } ]; // deprecated
 	root-key-sentinel <boolean>;
 	rrset-order { [ class <string> ] [ type <string> ] [ name <quoted_string> ] <string> <string>; ... };
 	secroots-file <quoted_string>;
@@ -293,7 +293,7 @@ options {
 	tcp-listen-queue <integer>;
 	tcp-receive-buffer <integer>;
 	tcp-send-buffer <integer>;
-	tkey-dhkey <quoted_string> <integer>;
+	tkey-dhkey <quoted_string> <integer>; // deprecated
 	tkey-domain <quoted_string>;
 	tkey-gssapi-credential <quoted_string>;
 	tkey-gssapi-keytab <quoted_string>;
@@ -404,7 +404,7 @@ view <string> [ <class> ] {
 	clients-per-query <integer>;
 	deny-answer-addresses { <address_match_element>; ... } [ except-from { <string>; ... } ];
 	deny-answer-aliases { <string>; ... } [ except-from { <string>; ... } ];
-	dialup ( notify | notify-passive | passive | refresh | <boolean> );
+	dialup ( notify | notify-passive | passive | refresh | <boolean> ); // deprecated
 	disable-algorithms <string> { <string>; ... }; // may occur multiple times
 	disable-ds-digests <string> { <string>; ... }; // may occur multiple times
 	disable-empty-zone <string>; // may occur multiple times
@@ -537,7 +537,7 @@ view <string> [ <class> ] {
 	resolver-retry-interval <integer>;
 	response-padding { <address_match_element>; ... } block-size <integer>;
 	response-policy { zone <string> [ add-soa <boolean> ] [ log <boolean> ] [ max-policy-ttl <duration> ] [ min-update-interval <duration> ] [ policy ( cname | disabled | drop | given | no-op | nodata | nxdomain | passthru | tcp-only <quoted_string> ) ] [ recursive-only <boolean> ] [ nsip-enable <boolean> ] [ nsdname-enable <boolean> ]; ... } [ add-soa <boolean> ] [ break-dnssec <boolean> ] [ max-policy-ttl <duration> ] [ min-update-interval <duration> ] [ min-ns-dots <integer> ] [ nsip-wait-recurse <boolean> ] [ nsdname-wait-recurse <boolean> ] [ qname-wait-recurse <boolean> ] [ recursive-only <boolean> ] [ nsip-enable <boolean> ] [ nsdname-enable <boolean> ] [ dnsrps-enable <boolean> ] [ dnsrps-options { <unspecified-text> } ];
-	root-delegation-only [ exclude { <string>; ... } ];
+	root-delegation-only [ exclude { <string>; ... } ]; // deprecated
 	root-key-sentinel <boolean>;
 	rrset-order { [ class <string> ] [ type <string> ] [ name <quoted_string> ] <string> <string>; ... };
 	send-cookie <boolean>;

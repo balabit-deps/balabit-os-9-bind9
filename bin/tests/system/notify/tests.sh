@@ -11,8 +11,9 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
-# shellcheck disable=SC2034
+set -e
 
+# shellcheck disable=SC2034
 . ../conf.sh
 
 dig_plus_opts() {
@@ -200,6 +201,10 @@ grep "test string" "$fnb" > /dev/null || ret=1
 grep "test string" "$fnc" > /dev/null || ret=1
 grep "sending notify to 10.53.0.5#[0-9]* : TSIG (b)" ns5/named.run > /dev/null || ret=1
 grep "sending notify to 10.53.0.5#[0-9]* : TSIG (c)" ns5/named.run > /dev/null || ret=1
+test_end
+
+test_start "checking notify-source uses port option correctly"
+grep "10.53.0.3#${EXTRAPORT2}: received notify for zone 'notify-source-port-test'" ns2/named.run > /dev/null || ret=1
 test_end
 
 # notify messages were sent to unresponsive 10.53.10.53 during the tests
