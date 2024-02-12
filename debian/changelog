@@ -1,3 +1,25 @@
+bind9 (1:9.18.18-0ubuntu0.22.04.2) jammy-security; urgency=medium
+
+  * SECURITY UPDATE: Multiple security issues
+    - debian/patches/0001-CVE-2023-4408.patch: Parsing large DNS messages
+      may cause excessive CPU load.
+    - debian/patches/0002-CVE-2023-5517.patch: Querying RFC 1918 reverse
+      zones may cause an assertion failure when nxdomain-redirect is
+      enabled.
+    - debian/patches/0003-CVE-2023-5679.patch: Enabling both DNS64 and
+      serve-stale may cause an assertion failure during recursive
+      resolution.
+    - debian/patches/0004-CVE-2023-50387-CVE-2023-50868.patch: Extreme CPU
+      consumption in DNSSEC validator and Preparing an NSEC3 closest
+      encloser proof can exhaust CPU resources.
+    - CVE-2023-4408
+    - CVE-2023-5517
+    - CVE-2023-5679
+    - CVE-2023-50387
+    - CVE-2023-50868
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 12 Feb 2024 14:29:56 -0500
+
 bind9 (1:9.18.18-0ubuntu0.22.04.1) jammy; urgency=medium
 
   * New upstream release 9.18.18 (LP: #2028413)
