@@ -9,6 +9,5 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
-
-def test_allowquery(run_tests_sh):
-    run_tests_sh()
+from . import check
+from . import query

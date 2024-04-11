@@ -1,3 +1,48 @@
+bind9 (1:9.18.24-0ubuntu0.22.04.1) jammy; urgency=medium
+
+  * New upstream version 9.18.24 (LP: #2040459)
+    - Updates:
+      + Mark use of AES as the DNS COOKIE algorithm as depricated.
+      + Mark resolver-nonbackoff-tries and resolver-retry-interval statements
+        as depricated.
+      + Update IP addresses for B.ROOT-SERVERS.NET to 170.247.170.2 and
+        2801:1b8:10::b.
+      + Mark dnssec-must-be-secure option as deprecated.
+      + Honor nsupdate -v option for SOA queries by sending both the UPDATE
+        request and the initial query over TCP.
+      + Reduce memory consumption through dedicated jemalloc memory arenas.
+    - Bug fixes:
+      + Fix accidental truncation to 32 bit of statistics channel counters.
+      + Do not schedule unsigned versions of inline-signed zones containing
+        DNSSEC records for resigning.
+      + Take local authoritive data into account when looking up stale data
+        from the cache.
+      + Fix assertion failure when lock-file used at the same time as named -X.
+      + Fix lockfile removal issue when starting named 3+ times.
+      + Fix validation of If-Modified-Since header in statistics channel for
+        its length.
+      + Add Content-Length header bounds check to avoid integer overflow.
+      + Fix memory leaks from OpenSSL error stack.
+      + Fix SERVFAIL responses after introduction of krb5-subdomain-self-rhs
+        and ms-subdomain-self-rhs UPDATE policies.
+      + Fix accidental disable of stale-refresh-time feature on rndc flush.
+      + Fix possible DNS message corruption from partial writes in TLS DNS.
+    - See https://bind9.readthedocs.io/en/v9.18.24/notes.html for additional
+      information.
+  * Remove CVE patches fixed upstream:
+    - CVE-2023-3341.patch
+    - CVE-2023-4236.patch
+    [ Fixed in 9.18.19 ]
+    - 0001-CVE-2023-4408.patch
+    - 0002-CVE-2023-5517.patch
+    - 0003-CVE-2023-5679.patch
+    - 0004-CVE-2023-50387-CVE-2023-50868.patch
+    [ Fixed in 9.18.24 ]
+  * d/p/always-use-standard-library-stdatomic.patch: Maintain use of the
+    standard library stdatomic.h.
+
+ -- Lena Voytek <lena.voytek@canonical.com>  Thu, 11 Apr 2024 14:11:18 -0700
+
 bind9 (1:9.18.18-0ubuntu0.22.04.2) jammy-security; urgency=medium
 
   * SECURITY UPDATE: Multiple security issues

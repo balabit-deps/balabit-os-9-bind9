@@ -314,6 +314,26 @@ file documentation:
     ``domain_name``
         A quoted string which is used as a DNS name; for example: ``my.test.domain``.
 
+    ``duration``
+        A duration in BIND 9 can be written in three ways: as single number
+        representing seconds, as a string of numbers with TTL-style
+        time-unit suffixes, or in ISO 6801 duration format.
+
+        Allowed TTL time-unit suffixes are: "W" (week), "D" (day), "H" (hour),
+        "M" (minute), and "S" (second). Examples: "1W" (1 week), "3d12h"
+        (3 days, 12 hours).
+
+        ISO 8601 duration format consists of the letter "P", followed by an
+	optional series of numbers with unit suffixes "Y" (year), "M" (month),
+        "W" (week), and "D" (day); this may optionally be followed by the
+        letter "T", and another series of numbers with unit suffixes
+        "H" (hour), "M" (minute), and "S" (second). Examples: "P3M10D"
+        (3 months, 10 days), "P2WT12H" (2 weeks, 12 hours), "pt15m"
+        (15 minutes).  For more information on ISO 8601 duration format,
+        see :rfc:`3339`, appendix A.
+
+        Both TTL-style and ISO 8601 duration formats are case-insensitive.
+
     ``fixedpoint``
         A non-negative real number that can be specified to the nearest one-hundredth. Up to five digits can be specified before a decimal point, and up to two digits after, so the maximum value is 99999.99. Acceptable values might be further limited by the contexts in which they are used.
 
@@ -1702,8 +1722,10 @@ default is used.
    :any:`disable-ds-digests` are treated as insecure.
 
 .. namedconf:statement:: dnssec-must-be-secure
-   :tags: dnssec
+   :tags: deprecated
    :short: Defines hierarchies that must or may not be secure (signed and validated).
+
+   This option is deprecated and will be removed in a future release.
 
    This specifies hierarchies which must be or may not be secure (signed and
    validated). If ``yes``, then :iscman:`named` only accepts answers if
@@ -3142,7 +3164,7 @@ for details on how to specify IP address lists.
    :rfc:`1034` to use case-insensitive name comparisons when checking for
    matching domain names.
 
-   If left undefined, the ACL defaults to ``none``: case-insensitive
+   If left undefined, the ACL defaults to ``none``: case-sensitive
    compression is used for all clients. If the ACL is defined and
    matches a client, case is ignored when compressing domain
    names in DNS responses sent to that client.
@@ -4348,17 +4370,21 @@ Tuning
    has no effect, the value of :any:`max-cache-ttl` will be ``0`` in such case.
 
 .. namedconf:statement:: resolver-nonbackoff-tries
-   :tags: server
+   :tags: deprecated.
    :short: Specifies the number of retries before exponential backoff.
 
-   This specifies how many retries occur before exponential backoff kicks in. The
-   default is ``3``.
+   This specifies how many retries occur before exponential backoff kicks in.
+   The default is ``3``.
+
+   This option is deprecated and will be removed in a future release.
 
 .. namedconf:statement:: resolver-retry-interval
-   :tags: server, query
+   :tags: deprecated
    :short: Sets the base retry interval (in milliseconds).
 
    This sets the base retry interval in milliseconds. The default is ``800``.
+
+   This option is deprecated and will be removed in a future release.
 
 .. namedconf:statement:: sig-validity-interval
    :tags: dnssec
@@ -6377,13 +6403,13 @@ The following options can be specified in a :any:`dnssec-policy` statement:
     DNSKEY RRset always includes a key-signing key for that algorithm.
 
     Here is an example (for illustration purposes only) of some possible
-    entries in a :any:`keys` list:
+    entries in a ``keys`` list:
 
     ::
 
         keys {
             ksk key-directory lifetime unlimited algorithm rsasha256 2048;
-            zsk lifetime P30D algorithm 8;
+            zsk lifetime 30d algorithm 8;
             csk lifetime P6MT12H3M15S algorithm ecdsa256;
         };
 
@@ -6402,7 +6428,11 @@ The following options can be specified in a :any:`dnssec-policy` statement:
     keys in hardware security modules or separate directories.
 
     The ``lifetime`` parameter specifies how long a key may be used
-    before rolling over.  In the example above, the first key has an
+    before rolling over. For convenience, TTL-style time-unit suffixes
+    can be used to specify the key lifetime. It also accepts ISO 8601
+    duration formats.
+
+    In the example above, the first key has an
     unlimited lifetime, the second key may be used for 30 days, and the
     third key has a rather peculiar lifetime of 6 months, 12 hours, 3
     minutes, and 15 seconds.  A lifetime of 0 seconds is the same as

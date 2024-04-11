@@ -105,7 +105,7 @@ def do_work(named_proc, resolver, rndc_cmd, kill_method, n_workers, n_queries):
             else:
                 # We attempt to send couple rndc commands while named is
                 # being shutdown
-                futures[executor.submit(launch_rndc, ["-t", "5", "status"])] = "status"
+                futures[executor.submit(launch_rndc, ["status"])] = "status"
 
         ret_code = -1
         for future in as_completed(futures):
@@ -175,8 +175,8 @@ def test_named_shutdown(named_port, control_port, kill_method):
     rndc = os.getenv("RNDC")
     assert rndc is not None
 
-    # rndc configuration resides in ../common/rndc.conf
-    rndc_cfg = os.path.join("..", "common", "rndc.conf")
+    # rndc configuration resides in ../_common/rndc.conf
+    rndc_cfg = os.path.join("..", "_common", "rndc.conf")
     assert os.path.isfile(rndc_cfg)
 
     # rndc command with default arguments.
