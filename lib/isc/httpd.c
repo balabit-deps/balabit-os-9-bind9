@@ -340,8 +340,10 @@ value_match(const struct phr_header *header, const char *match) {
 	limit = header->value_len - match_len + 1;
 
 	for (size_t i = 0; i < limit; i++) {
-		if (isspace(header->value[i])) {
-			while (i < limit && isspace(header->value[i])) {
+		if (isspace((unsigned char)header->value[i])) {
+			while (i < limit &&
+			       isspace((unsigned char)header->value[i]))
+			{
 				i++;
 			}
 			continue;
@@ -427,7 +429,7 @@ process_request(isc_httpd_t *httpd, size_t last_len) {
 	 */
 	httpd->flags = 0;
 
-	ssize_t content_len = 0;
+	size_t content_len = 0;
 	bool keep_alive = false;
 	bool host_header = false;
 
@@ -438,12 +440,23 @@ process_request(isc_httpd_t *httpd, size_t last_len) {
 
 		if (name_match(header, "Content-Length")) {
 			char *endptr;
-			content_len = (size_t)strtoul(header->value, &endptr,
-						      10);
-			/* Consistency check, if we consumed all numbers */
+			long val = strtol(header->value, &endptr, 10);
+
+			errno = 0;
+
+			/* ensure we consumed all digits */
 			if ((header->value + header->value_len) != endptr) {
+				return (ISC_R_BADNUMBER);
+			}
+			/* ensure there was no minus sign */
+			if (val < 0) {
+				return (ISC_R_BADNUMBER);
+			}
+			/* ensure it did not overflow */
+			if (errno != 0) {
 				return (ISC_R_RANGE);
 			}
+			content_len = val;
 		} else if (name_match(header, "Connection")) {
 			/* multiple fields in a connection header are allowed */
 			if (value_match(header, "close")) {
@@ -458,7 +471,9 @@ process_request(isc_httpd_t *httpd, size_t last_len) {
 			if (value_match(header, "deflate")) {
 				httpd->flags |= ACCEPT_DEFLATE;
 			}
-		} else if (name_match(header, "If-Modified-Since")) {
+		} else if (name_match(header, "If-Modified-Since") &&
+			   header->value_len < ISC_FORMATHTTPTIMESTAMP_SIZE)
+		{
 			char timestamp[ISC_FORMATHTTPTIMESTAMP_SIZE + 1];
 			memmove(timestamp, header->value, header->value_len);
 			timestamp[header->value_len] = 0;
@@ -477,17 +492,18 @@ process_request(isc_httpd_t *httpd, size_t last_len) {
 		return (ISC_R_BADNUMBER);
 	}
 
-	if (content_len == (ssize_t)ULONG_MAX) {
-		/* Invalid number in the header value. */
-		return (ISC_R_BADNUMBER);
+	if (content_len >= HTTP_MAX_REQUEST_LEN) {
+		return (ISC_R_RANGE);
 	}
-	if (httpd->consume + content_len > httpd->recvlen) {
+
+	size_t consume = httpd->consume + content_len;
+	if (consume > httpd->recvlen) {
 		/* The request data isn't complete yet. */
 		return (ISC_R_NOMORE);
 	}
 
 	/* Consume the request's data, which we do not use. */
-	httpd->consume += content_len;
+	httpd->consume = consume;
 
 	switch (httpd->minor_version) {
 	case 0:
