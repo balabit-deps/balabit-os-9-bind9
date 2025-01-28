@@ -1,1 +1,3 @@
 always-use-standard-library-stdatomic.patch
+CVE-2024-11187.patch
+CVE-2024-12705.patch
