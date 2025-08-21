@@ -650,7 +650,7 @@ ret=0
 $CHECKCONF kasp-bad-nsec3-iter.conf >checkconf.out$n 2>&1 && ret=1
 grep "dnssec-policy: nsec3 iterations value 151 out of range" <checkconf.out$n >/dev/null || ret=1
 lines=$(wc -l <"checkconf.out$n")
-if [ $lines -ne 3 ]; then ret=1; fi
+if [ $lines -ne 5 ]; then ret=1; fi
 if [ $ret -ne 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
@@ -713,6 +713,15 @@ if [ $ret -ne 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
 n=$((n + 1))
+echo_i "checking named-checkconf kasp deprecated algorithms ($n)"
+ret=0
+$CHECKCONF kasp-deprecated.conf >checkconf.out$n 2>&1 || ret=1
+grep "dnssec-policy: DNSSEC algorithm rsasha1 is deprecated" checkconf.out$n >/dev/null || ret=1
+grep "dnssec-policy: DNSSEC algorithm nsec3rsasha1 is deprecated" checkconf.out$n >/dev/null || ret=1
+if [ $ret -ne 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n + 1))
 echo_i "check that a good 'kasp' configuration is accepted ($n)"
 ret=0
 $CHECKCONF good-kasp.conf >checkconf.out$n 2>/dev/null || ret=1
@@ -760,6 +769,17 @@ echo_i "check that using both max-zone-ttl and dnssec-policy generates a warning
 ret=0
 $CHECKCONF warn-kasp-max-zone-ttl.conf >checkconf.out$n 2>/dev/null || ret=1
 grep "option 'max-zone-ttl' is ignored when used together with 'dnssec-policy'" <checkconf.out$n >/dev/null || ret=1
+if [ $ret != 0 ]; then
+  echo_i "failed"
+  ret=1
+fi
+status=$((status + ret))
+
+n=$((n + 1))
+echo_i "check that using dnssec-policy generates a warning for dynamic zones wrt inline-signing ($n)"
+ret=0
+$CHECKCONF warn-kasp-ddns-inline-signing-no.conf >checkconf.out$n 2>/dev/null || ret=1
+grep "'inline-signing' default changed to 'yes' in 9\.20\." <checkconf.out$n >/dev/null || ret=1
 if [ $ret != 0 ]; then
   echo_i "failed"
   ret=1

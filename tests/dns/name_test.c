@@ -508,7 +508,7 @@ ISC_RUN_TEST_IMPL(hash) {
 				      testcases[i].name2, h2);
 		}
 
-		assert_int_equal((h1 == h2), testcases[i].expect);
+		assert_int_equal(h1 == h2, testcases[i].expect);
 
 		/* Now case-sensitive */
 		h1 = dns_name_hash(n1, false);
@@ -521,7 +521,7 @@ ISC_RUN_TEST_IMPL(hash) {
 				      testcases[i].name2, h2);
 		}
 
-		assert_int_equal((h1 == h2), testcases[i].expect);
+		assert_int_equal(h1 == h2, testcases[i].expect);
 	}
 }
 
@@ -734,7 +734,7 @@ ISC_RUN_TEST_IMPL(fromwire_thread(void *arg) {
 		(void)dns_name_fromwire(&name, &source, &dctx, 0, &target);
 	}
 
-	return (NULL);
+	return NULL;
 }
 
 ISC_RUN_TEST_IMPL(benchmark) {

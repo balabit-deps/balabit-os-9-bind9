@@ -49,7 +49,7 @@ setup_test(void **state) {
 
 	dst_lib_init(mctx, NULL);
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -58,7 +58,7 @@ teardown_test(void **state) {
 
 	dst_lib_destroy();
 
-	return (0);
+	return 0;
 }
 
 /* Read sig in file at path to buf. Check signature ineffability */
@@ -77,7 +77,7 @@ sig_fromfile(const char *path, isc_buffer_t *buf) {
 	result = isc_file_getsizefd(fileno(fp), &size);
 	assert_int_equal(result, ISC_R_SUCCESS);
 
-	data = isc_mem_get(mctx, (size + 1));
+	data = isc_mem_get(mctx, size + 1);
 	assert_non_null(data);
 
 	len = (size_t)size;
@@ -128,7 +128,7 @@ sig_fromfile(const char *path, isc_buffer_t *buf) {
 
 err:
 	isc_mem_put(mctx, data, size + 1);
-	return (result);
+	return result;
 }
 
 static void
@@ -158,7 +158,7 @@ check_sig(const char *datapath, const char *sigpath, const char *keyname,
 	result = isc_file_getsizefd(fileno(fp), &size);
 	assert_int_equal(result, ISC_R_SUCCESS);
 
-	data = isc_mem_get(mctx, (size + 1));
+	data = isc_mem_get(mctx, size + 1);
 	assert_non_null(data);
 
 	p = data;

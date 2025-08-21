@@ -521,20 +521,20 @@ static const char *identifier[ISC_R_NRESULTS] = {
 	[ISCCC_R_MAXDEPTH] = "ISCCC_R_MAXDEPTH",
 };
 
-STATIC_ASSERT((DNS_R_SERVFAIL - DNS_R_NOERROR == 2),
+STATIC_ASSERT(DNS_R_SERVFAIL - DNS_R_NOERROR == 2,
 	      "DNS_R_NOERROR has wrong value");
 
-STATIC_ASSERT((DNS_R_BADVERS - DNS_R_NOERROR == 16),
+STATIC_ASSERT(DNS_R_BADVERS - DNS_R_NOERROR == 16,
 	      "DNS_R_BADVERS has wrong value");
 
-STATIC_ASSERT((ISC_R_NRESULTS < INT32_MAX), "result.h enum too big");
+STATIC_ASSERT(ISC_R_NRESULTS < INT32_MAX, "result.h enum too big");
 
 const char *
 isc_result_totext(isc_result_t result) {
-	return (description[result]);
+	return description[result];
 }
 
 const char *
 isc_result_toid(isc_result_t result) {
-	return (identifier[result]);
+	return identifier[result];
 }

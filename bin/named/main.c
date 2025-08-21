@@ -125,6 +125,7 @@ static int maxudp = 0;
 /*
  * -T options:
  */
+static bool cookiealwaysvalid = false;
 static bool dropedns = false;
 static bool ednsformerr = false;
 static bool ednsnotimp = false;
@@ -318,7 +319,7 @@ usage(void) {
 			"             [-S sockets] [-t chrootdir] [-u "
 			"username] [-U listeners]\n"
 			"             [-X lockfile] [-m "
-			"{usage|trace|record|size|mctx}]\n"
+			"{usage|trace|record}]\n"
 			"             [-M fill|nofill]\n"
 			"usage: named [-v|-V|-C]\n");
 }
@@ -411,7 +412,7 @@ parse_int(char *arg, const char *desc) {
 	if (tmp < 0 || tmp != ltmp) {
 		named_main_earlyfatal("%s '%s' out of range", desc, arg);
 	}
-	return (tmp);
+	return tmp;
 }
 
 static struct flag_def {
@@ -644,6 +645,7 @@ printversion(bool verbose) {
 	printf("threads support is enabled\n");
 
 	isc_mem_create(&mctx);
+	isc_mem_setname(mctx, "main");
 	result = dst_lib_init(mctx, named_g_engine);
 	if (result == ISC_R_SUCCESS) {
 		isc_buffer_init(&b, buf, sizeof(buf));
@@ -723,7 +725,9 @@ parse_T_opt(char *option) {
 	 * force the server to behave (or misbehave) in
 	 * specified ways for testing purposes.
 	 */
-	if (!strcmp(option, "dropedns")) {
+	if (!strcmp(option, "cookiealwaysvalid")) {
+		cookiealwaysvalid = true;
+	} else if (!strcmp(option, "dropedns")) {
 		dropedns = true;
 	} else if (!strcmp(option, "ednsformerr")) {
 		ednsformerr = true;
@@ -1042,12 +1046,12 @@ create_managers(void) {
 				     0 /* quantum */, &named_g_netmgr,
 				     &named_g_taskmgr, &named_g_timermgr);
 	if (result != ISC_R_SUCCESS) {
-		return (result);
+		return result;
 	}
 
 	isc_nm_maxudp(named_g_netmgr, maxudp);
 
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 
 static void
@@ -1344,6 +1348,9 @@ setup(void) {
 	/*
 	 * Modify server context according to command line options
 	 */
+	if (cookiealwaysvalid) {
+		ns_server_setoption(sctx, NS_SERVER_COOKIEALWAYSVALID, true);
+	}
 	if (disable4) {
 		ns_server_setoption(sctx, NS_SERVER_DISABLE4, true);
 	}
@@ -1458,7 +1465,7 @@ named_smf_get_instance(char **ins_name, int debug, isc_mem_t *mctx) {
 			UNEXPECTED_ERROR("scf_handle_create() failed: %s",
 					 scf_strerror(scf_error()));
 		}
-		return (ISC_R_FAILURE);
+		return ISC_R_FAILURE;
 	}
 
 	if (scf_handle_bind(h) == -1) {
@@ -1467,7 +1474,7 @@ named_smf_get_instance(char **ins_name, int debug, isc_mem_t *mctx) {
 					 scf_strerror(scf_error()));
 		}
 		scf_handle_destroy(h);
-		return (ISC_R_FAILURE);
+		return ISC_R_FAILURE;
 	}
 
 	if ((namelen = scf_myname(h, NULL, 0)) == -1) {
@@ -1476,7 +1483,7 @@ named_smf_get_instance(char **ins_name, int debug, isc_mem_t *mctx) {
 					 scf_strerror(scf_error()));
 		}
 		scf_handle_destroy(h);
-		return (ISC_R_FAILURE);
+		return ISC_R_FAILURE;
 	}
 
 	if ((instance = isc_mem_allocate(mctx, namelen + 1)) == NULL) {
@@ -1484,7 +1491,7 @@ named_smf_get_instance(char **ins_name, int debug, isc_mem_t *mctx) {
 				 "allocation failed: %s",
 				 isc_result_totext(ISC_R_NOMEMORY));
 		scf_handle_destroy(h);
-		return (ISC_R_FAILURE);
+		return ISC_R_FAILURE;
 	}
 
 	if (scf_myname(h, instance, namelen + 1) == -1) {
@@ -1494,12 +1501,12 @@ named_smf_get_instance(char **ins_name, int debug, isc_mem_t *mctx) {
 		}
 		scf_handle_destroy(h);
 		isc_mem_free(mctx, instance);
-		return (ISC_R_FAILURE);
+		return ISC_R_FAILURE;
 	}
 
 	scf_handle_destroy(h);
 	*ins_name = instance;
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 #endif /* HAVE_LIBSCF */
 
@@ -1659,5 +1666,5 @@ main(int argc, char *argv[]) {
 	ProfilerStop();
 #endif /* ifdef HAVE_GPERFTOOLS_PROFILER */
 
-	return (0);
+	return 0;
 }

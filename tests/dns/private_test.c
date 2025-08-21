@@ -46,10 +46,10 @@ setup_test(void **state) {
 	result = dst_lib_init(mctx, NULL);
 
 	if (result != ISC_R_SUCCESS) {
-		return (1);
+		return 1;
 	}
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -58,7 +58,7 @@ teardown_test(void **state) {
 
 	dst_lib_destroy();
 
-	return (0);
+	return 0;
 }
 
 typedef struct {
@@ -190,8 +190,10 @@ ISC_RUN_TEST_IMPL(private_nsec3_totext) {
 	const char *results[] = { "Creating NSEC3 chain 1 0 1 BEEF",
 				  "Creating NSEC3 chain 1 1 10 DADD",
 				  "Pending NSEC3 chain 1 0 20 BEAD",
+				  /* clang-format off */
 				  ("Removing NSEC3 chain 1 0 30 DEAF / "
 				   "creating NSEC chain"),
+				  /* clang-format on */
 				  "Removing NSEC3 chain 1 0 100 FEEDABEE" };
 	int ncases = 5;
 

@@ -1,0 +1,30 @@
+Description: Clean up terminal when user exits interactive mode with SIGINT.
+ nslookup and nsupdate provide interactive terminal modes using readline.
+ However, when the SIGINT signal is sent during this time, the terminal must
+ be cleaned up to avoid breaking the visibility of future user input.
+Author: Lena Voytek <lena.voytek@canonical.com>
+Bug: https://gitlab.isc.org/isc-projects/bind9/-/issues/839
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/bind9/+bug/2112278
+Last-Update: 2025-08-19
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+--- a/lib/isc/app.c
++++ b/lib/isc/app.c
+@@ -24,6 +24,8 @@
+ #include <sys/types.h>
+ #include <unistd.h>
+ 
++#include <editline/readline.h>
++
+ #include <isc/app.h>
+ #include <isc/atomic.h>
+ #include <isc/condition.h>
+@@ -260,6 +262,8 @@
+ 		if (atomic_load_acquire(&ctx->want_shutdown) &&
+ 		    atomic_load_acquire(&ctx->blocked))
+ 		{
++			rl_reset_terminal(NULL);
++			printf("\n");
+ 			exit(EXIT_FAILURE);
+ 		}
+ 	}

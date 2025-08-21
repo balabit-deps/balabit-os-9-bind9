@@ -1,3 +1,70 @@
+bind9 (1:9.18.39-0ubuntu0.22.04.1) jammy; urgency=medium
+
+  * New upstream release 9.18.39 (LP: #2112520)
+    - Features:
+      + Add support for parsing the DSYNC record.
+      + Add support for the CO flag to dig.
+      + Add a new option to configure the maximum number of outgoing queries
+        per client request.
+      + Add WALLET type.
+    - Updates:
+      + Add deprecation warnings for RSASHA1, RSASHA1-NSEC3SHA1 and DS digest type 1.
+      + Make TLS data processing more reliable in various network conditions.
+      + Print the expiration time of the stale records.
+      + Remove –with-tuning=small/large configuration option.
+      + Update built-in bind.keys file with the new 2025 IANA root key.
+      + Move contributed DLZ modules into a separate repository.
+      + Emit more helpful log messages for exceeding max-records-per-type.
+      + Harden key management when key files have become unavailable.
+      + Allow IXFR-to-AXFR fallback on DNS_R_TOOMANYRECORDS.
+    - Bug Fixes:
+      + Fix a possible crash when adding a zone while recursing.
+      + Clean enough memory when adding new ADB names/entries under memory pressure.
+      + Prevent spurious validation failures.
+      + Rescan the interfaces again when reconfiguring the server.
+      + Fix the default interface-interval from 60s to 60m.
+      + Fix purge-keys bug when using views.
+      + Set name for all the isc_mem contexts.
+      + Stop caching lack of EDNS support.
+      + Fix resolver statistics counters for timed-out responses.
+      + Don’t enforce NOAUTH/NOCONF flags in DNSKEYs.
+      + Fix inconsistency in CNAME/DNAME handling during resolution.
+      + Fix deferred validation of unsigned DS and DNSKEY records.
+      + Fix RPZ race condition during a reconfiguration.
+      + Fix “CNAME and other data check” not being applied to all types.
+      + Remove NSEC/DS/NSEC3 RRSIG check from dns_message_parse().
+      + Fix rndc flushname for longer name server names.
+      + Fix recently expired records sending timestamps in the future.
+      + Fix YAML string not terminated in negative response in delv.
+      + Apply the memory limit only to ADB database items.
+      + Avoid unnecessary locking in the zone/cache database.
+      + Improve the resolver performance under attack.
+      + Fix nsupdate hang when processing a large update.
+      + Fix possible assertion failure when reloading server while processing
+        update policy rules.
+      + Fix dnssec-signzone signing non-DNSKEY RRsets with revoked keys.
+      + Fix improper handling of unknown directives in resolv.conf.
+      + Fix dig parsing of {&dns}.
+      + Fix NSEC3 closest encloser lookup for names with empty non-terminals.
+      + Fix display of dig options with format form [+-]option=<value>.
+      + Provide more visibility into TLS configuration errors by logging
+      + Fix a statistics channel counter bug when “forward only” zones are
+        used.
+      + Fix wrong address queries in the static-stub implementation.
+      + Limit the outgoing UDP send queue size.
+      + Do not set SO_INCOMING_CPU.
+    - See https://bind9.readthedocs.io/en/v9.18.39/notes.html for additional
+      information.
+  * d/p/CVE-2024-11187.patch, d/p/CVE-2024-12705.patch - Remove - fixed
+    upstream in 9.18.33.
+  * d/bind9.postinst: Perform postinst config check. (LP: #1492212)
+  * Clean up terminal after SIGINT call in interactive tools. (LP: #2112278)
+    - d/p/add-sigint-on-interactive-cleanup.patch: Run rl_reset_terminal before
+      SIGINT exit.
+    - d/rules: Link with libedit to use readline command in base library.
+
+ -- Lena Voytek <lena.voytek@canonical.com>  Thu, 21 Aug 2025 10:58:41 -0400
+
 bind9 (1:9.18.30-0ubuntu0.22.04.2) jammy-security; urgency=medium
 
   * SECURITY UPDATE: Many records in the additional section cause CPU
