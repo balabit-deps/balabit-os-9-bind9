@@ -60,11 +60,11 @@ To build BIND 9, the following packages must be installed:
 - ``perl``
 - ``pkg-config`` / ``pkgconfig`` / ``pkgconf``
 
-BIND 9.18 requires ``libuv`` 1.0.0 or higher, using ``libuv`` >= 1.40.0
+BIND 9.18 requires ``libuv`` 1.0.0 or higher; using ``libuv`` >= 1.40.0
 is recommended. Compiling or running with ``libuv`` 1.35.0 or 1.36.0 is
 not supported, as this could lead to an assertion failure in the UDP
-receive code. On older systems, an updated ``libuv`` package needs to be
-installed from sources such as EPEL, PPA, or other native sources. The
+receive code. On older systems an updated ``libuv`` package needs to be
+installed from sources, such as EPEL, PPA, or other native sources. The
 other option is to build and install ``libuv`` from source.
 
 OpenSSL 1.0.2e or newer is required. If the OpenSSL library is installed
@@ -94,8 +94,9 @@ unavailable, ``--disable-doh`` can be used to disable DoH support.
 
 To support the HTTP statistics channel, the server must be linked with
 at least one of the following libraries: ``libxml2``
-(http://xmlsoft.org) or ``json-c`` (https://github.com/json-c/json-c).
-If these are installed at a nonstandard location, then:
+(https://gitlab.gnome.org/GNOME/libxml2/-/wikis/home) or ``json-c``
+(https://github.com/json-c/json-c).  If these are installed at a
+nonstandard location, then:
 
 - for ``libxml2``, specify the prefix using ``--with-libxml2=/prefix``,
 - for ``json-c``, adjust ``PKG_CONFIG_PATH``.
@@ -119,7 +120,7 @@ installed in a nonstandard location, specify the prefix using
 
 For DNSTAP packet logging, ``libfstrm``
 (https://github.com/farsightsec/fstrm) and ``libprotobuf-c``
-(https://developers.google.com/protocol-buffers) must be installed, and
+(https://protobuf.dev) must be installed, and
 BIND must be configured with ``--enable-dnstap``.
 
 To support internationalized domain names in :iscman:`dig`, ``libidn2``
@@ -178,6 +179,6 @@ macOS
 
 Building on macOS assumes that the “Command Tools for Xcode” are
 installed. These can be downloaded from
-https://developer.apple.com/download/more/ or, if Xcode is already
+https://developer.apple.com/xcode/resources/ or, if Xcode is already
 installed, simply run ``xcode-select --install``. (Note that an Apple ID
 may be required to access the download page.)

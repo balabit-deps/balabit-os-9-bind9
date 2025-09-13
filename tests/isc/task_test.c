@@ -60,7 +60,7 @@ _setup(void **state) {
 	workers = 0;
 	setup_managers(state);
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -72,7 +72,7 @@ _setup2(void **state) {
 	workers = 2;
 	setup_managers(state);
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -84,7 +84,7 @@ _setup4(void **state) {
 	workers = 4;
 	setup_managers(state);
 
-	return (0);
+	return 0;
 }
 
 static int
@@ -94,7 +94,7 @@ _teardown(void **state) {
 	isc_condition_destroy(&cv);
 	isc_mutex_destroy(&lock);
 
-	return (0);
+	return 0;
 }
 
 static void
@@ -571,7 +571,17 @@ ISC_RUN_TEST_IMPL(basic) {
 
 	atomic_store(&done, true);
 
+	/* Let everything run for 10 seconds. */
 	sleep(10);
+
+	/*
+	 * Disable the timers, let all the already dispatched events to
+	 * complete, and then destroy the timers.
+	 */
+	(void)isc_timer_reset(ti1, isc_timertype_inactive, NULL, NULL, true);
+	(void)isc_timer_reset(ti2, isc_timertype_inactive, NULL, NULL, true);
+	(void)isc_timer_reset(ti3, isc_timertype_inactive, NULL, NULL, true);
+	sleep(4);
 	isc_timer_destroy(&ti1);
 	isc_timer_destroy(&ti2);
 	LOCK(&lock);
@@ -594,7 +604,7 @@ spin(int n) {
 			r = 0;
 		}
 	}
-	return (r);
+	return r;
 }
 
 static void
@@ -1426,7 +1436,7 @@ try_purgeevent(bool purgeable) {
 
 	isc_task_detach(&task);
 
-	assert_int_equal(eventcnt, (purgeable ? 0 : 1));
+	assert_int_equal(eventcnt, purgeable ? 0 : 1);
 }
 
 /*

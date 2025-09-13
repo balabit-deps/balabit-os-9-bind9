@@ -589,6 +589,26 @@ EOF
 
 n=$((n + 1))
 ret=0
+i=0
+echo_i "check that nsupdate does not hang when processing a large number of updates interactively ($n)"
+{
+  echo "server 10.53.0.3 ${PORT}"
+  echo "zone many-updates.test."
+  while [ $i -le 2000 ]; do
+    echo "update add host$i.many-updates.test. 3600 IN TXT \"host $i\""
+    i=$((i + 1))
+  done
+  echo "send"
+} | $NSUPDATE
+echo_i "query for host2000.many-updates.test ($n)"
+retry_quiet 5 has_positive_response host2000.many-updates.test TXT 10.53.0.3 || ret=1
+[ $ret = 0 ] || {
+  echo_i "failed"
+  status=1
+}
+
+n=$((n + 1))
+ret=0
 echo_i "start NSEC3PARAM changes via UPDATE on a unsigned zone test ($n)"
 $NSUPDATE <<EOF
 server 10.53.0.3 ${PORT}
@@ -1205,6 +1225,27 @@ if [ $ret -ne 0 ]; then
   echo_i "failed"
   status=1
 fi
+
+n=$((n + 1))
+echo_i "check adding more records than max-records-per-type fails ($n)"
+ret=0
+$NSUPDATE <<END >nsupdate.out.test$n 2>&1 && ret=1
+server 10.53.0.1 ${PORT}
+zone max-ttl.nil.
+update add a.max-ttl.nil. 60 IN A 192.0.2.1
+update add a.max-ttl.nil. 60 IN A 192.0.2.2
+update add a.max-ttl.nil. 60 IN A 192.0.2.3
+update add a.max-ttl.nil. 60 IN A 192.0.2.4
+send
+END
+grep "update failed: SERVFAIL" nsupdate.out.test$n >/dev/null || ret=1
+msg="error updating 'a.max-ttl.nil/A' in 'max-ttl.nil/IN' (zone): too many records (must not exceed 3)"
+wait_for_log 10 "$msg" ns1/named.run || ret=1
+[ $ret = 0 ] || {
+  echo_i "failed"
+  status=1
+}
+nextpart ns1/named.run >/dev/null
 
 n=$((n + 1))
 ret=0

@@ -70,7 +70,7 @@ static isc_result_t
 digest_callback(void *arg, isc_region_t *data) {
 	dst_context_t *ctx = arg;
 
-	return (dst_context_adddata(ctx, data));
+	return dst_context_adddata(ctx, data);
 }
 
 static void
@@ -85,8 +85,8 @@ inc_stat(isc_statscounter_t counter) {
  */
 static int
 rdata_compare_wrapper(const void *rdata1, const void *rdata2) {
-	return (dns_rdata_compare((const dns_rdata_t *)rdata1,
-				  (const dns_rdata_t *)rdata2));
+	return dns_rdata_compare((const dns_rdata_t *)rdata1,
+				 (const dns_rdata_t *)rdata2);
 }
 
 /*
@@ -110,7 +110,7 @@ rdataset_to_sortedarray(dns_rdataset_t *set, isc_mem_t *mctx,
 	if (ret != ISC_R_SUCCESS) {
 		dns_rdataset_disassociate(&rdataset);
 		isc_mem_put(mctx, data, n * sizeof(dns_rdata_t));
-		return (ret);
+		return ret;
 	}
 
 	/*
@@ -128,7 +128,7 @@ rdataset_to_sortedarray(dns_rdataset_t *set, isc_mem_t *mctx,
 	*rdata = data;
 	*nrdata = n;
 	dns_rdataset_disassociate(&rdataset);
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 
 isc_result_t
@@ -148,7 +148,7 @@ dns_dnssec_keyfromrdata(const dns_name_t *name, const dns_rdata_t *rdata,
 	dns_rdata_toregion(rdata, &r);
 	isc_buffer_init(&b, r.base, r.length);
 	isc_buffer_add(&b, r.length);
-	return (dst_key_fromdns(name, rdata->rdclass, &b, mctx, key));
+	return dst_key_fromdns(name, rdata->rdclass, &b, mctx, key);
 }
 
 static isc_result_t
@@ -164,7 +164,7 @@ digest_sig(dst_context_t *ctx, bool downcase, dns_rdata_t *sigrdata,
 	r.length = 18;
 	ret = dst_context_adddata(ctx, &r);
 	if (ret != ISC_R_SUCCESS) {
-		return (ret);
+		return ret;
 	}
 	if (downcase) {
 		dns_fixedname_init(&fname);
@@ -177,7 +177,7 @@ digest_sig(dst_context_t *ctx, bool downcase, dns_rdata_t *sigrdata,
 		dns_name_toregion(&rrsig->signer, &r);
 	}
 
-	return (dst_context_adddata(ctx, &r));
+	return dst_context_adddata(ctx, &r);
 }
 
 isc_result_t
@@ -194,7 +194,6 @@ dns_dnssec_sign(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 	isc_result_t ret;
 	isc_buffer_t *databuf = NULL;
 	char data[256 + 8];
-	uint32_t flags;
 	unsigned int sigsize;
 	dns_fixedname_t fnewname;
 	dns_fixedname_t fsigner;
@@ -209,18 +208,7 @@ dns_dnssec_sign(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 	REQUIRE(sigrdata != NULL);
 
 	if (*inception >= *expire) {
-		return (DNS_R_INVALIDTIME);
-	}
-
-	/*
-	 * Is the key allowed to sign data?
-	 */
-	flags = dst_key_flags(key);
-	if ((flags & DNS_KEYTYPE_NOAUTH) != 0) {
-		return (DNS_R_KEYUNAUTHORIZED);
-	}
-	if ((flags & DNS_KEYFLAG_OWNERMASK) != DNS_KEYOWNER_ZONE) {
-		return (DNS_R_KEYUNAUTHORIZED);
+		return DNS_R_INVALIDTIME;
 	}
 
 	sig.mctx = mctx;
@@ -250,7 +238,7 @@ dns_dnssec_sign(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 	sig.keyid = dst_key_id(key);
 	ret = dst_key_sigsize(key, &sigsize);
 	if (ret != ISC_R_SUCCESS) {
-		return (ret);
+		return ret;
 	}
 	sig.siglen = sigsize;
 	/*
@@ -367,7 +355,7 @@ cleanup_databuf:
 	isc_buffer_free(&databuf);
 	isc_mem_put(mctx, sig.signature, sig.siglen);
 
-	return (ret);
+	return ret;
 }
 
 isc_result_t
@@ -385,7 +373,6 @@ dns_dnssec_verify(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 	unsigned char data[300];
 	dst_context_t *ctx = NULL;
 	int labels = 0;
-	uint32_t flags;
 	bool downcase = false;
 
 	REQUIRE(name != NULL);
@@ -396,16 +383,16 @@ dns_dnssec_verify(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 
 	ret = dns_rdata_tostruct(sigrdata, &sig, NULL);
 	if (ret != ISC_R_SUCCESS) {
-		return (ret);
+		return ret;
 	}
 
 	if (set->type != sig.covered) {
-		return (DNS_R_SIGINVALID);
+		return DNS_R_SIGINVALID;
 	}
 
 	if (isc_serial_lt(sig.timeexpire, sig.timesigned)) {
 		inc_stat(dns_dnssecstats_fail);
-		return (DNS_R_SIGINVALID);
+		return DNS_R_SIGINVALID;
 	}
 
 	if (!ignoretime) {
@@ -416,15 +403,15 @@ dns_dnssec_verify(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 		 */
 		if (isc_serial_lt((uint32_t)now, sig.timesigned)) {
 			inc_stat(dns_dnssecstats_fail);
-			return (DNS_R_SIGFUTURE);
+			return DNS_R_SIGFUTURE;
 		} else if (isc_serial_lt(sig.timeexpire, (uint32_t)now)) {
 			inc_stat(dns_dnssecstats_fail);
-			return (DNS_R_SIGEXPIRED);
+			return DNS_R_SIGEXPIRED;
 		}
 	}
 
 	/*
-	 * NS, SOA and DNSSKEY records are signed by their owner.
+	 * NS, SOA and DNSKEY records are signed by their owner.
 	 * DS records are signed by the parent.
 	 */
 	switch (set->type) {
@@ -433,34 +420,21 @@ dns_dnssec_verify(const dns_name_t *name, dns_rdataset_t *set, dst_key_t *key,
 	case dns_rdatatype_dnskey:
 		if (!dns_name_equal(name, &sig.signer)) {
 			inc_stat(dns_dnssecstats_fail);
-			return (DNS_R_SIGINVALID);
+			return DNS_R_SIGINVALID;
 		}
 		break;
 	case dns_rdatatype_ds:
 		if (dns_name_equal(name, &sig.signer)) {
 			inc_stat(dns_dnssecstats_fail);
-			return (DNS_R_SIGINVALID);
+			return DNS_R_SIGINVALID;
 		}
 		FALLTHROUGH;
 	default:
 		if (!dns_name_issubdomain(name, &sig.signer)) {
 			inc_stat(dns_dnssecstats_fail);
-			return (DNS_R_SIGINVALID);
+			return DNS_R_SIGINVALID;
 		}
 		break;
-	}
-
-	/*
-	 * Is the key allowed to sign data?
-	 */
-	flags = dst_key_flags(key);
-	if ((flags & DNS_KEYTYPE_NOAUTH) != 0) {
-		inc_stat(dns_dnssecstats_fail);
-		return (DNS_R_KEYUNAUTHORIZED);
-	}
-	if ((flags & DNS_KEYFLAG_OWNERMASK) != DNS_KEYOWNER_ZONE) {
-		inc_stat(dns_dnssecstats_fail);
-		return (DNS_R_KEYUNAUTHORIZED);
 	}
 
 again:
@@ -602,7 +576,7 @@ cleanup_struct:
 		inc_stat(dns_dnssecstats_wildcard);
 		ret = DNS_R_FROMWILDCARD;
 	}
-	return (ret);
+	return ret;
 }
 
 bool
@@ -633,7 +607,7 @@ dns_dnssec_keyactive(dst_key_t *key, isc_stdtime_t now) {
 	 * keys are assumed active.
 	 */
 	if (major == 1 && minor <= 2) {
-		return (true);
+		return true;
 	}
 
 	hint_publish = dst_key_is_published(key, now, &publish);
@@ -643,18 +617,18 @@ dns_dnssec_keyactive(dst_key_t *key, isc_stdtime_t now) {
 	hint_remove = dst_key_is_removed(key, now, &remove);
 
 	if (hint_remove) {
-		return (false);
+		return false;
 	}
 	if (hint_publish && hint_revoke) {
-		return (true);
+		return true;
 	}
 	if (hint_zsign && zsk) {
-		return (true);
+		return true;
 	}
 	if (hint_ksign && ksk) {
-		return (true);
+		return true;
 	}
-	return (false);
+	return false;
 }
 
 /*%<
@@ -686,14 +660,14 @@ syncpublish(dst_key_t *key, isc_stdtime_t now) {
 	 * Smart signing started with key format 1.3
 	 */
 	if (major == 1 && minor <= 2) {
-		return (false);
+		return false;
 	}
 
 	/* Check kasp state first. */
 	result = dst_key_getstate(key, DST_KEY_DS, &state);
 	if (result == ISC_R_SUCCESS) {
-		return (state == DST_KEY_STATE_RUMOURED ||
-			state == DST_KEY_STATE_OMNIPRESENT);
+		return state == DST_KEY_STATE_RUMOURED ||
+		       state == DST_KEY_STATE_OMNIPRESENT;
 	}
 
 	/* If no kasp state, check timings. */
@@ -706,7 +680,7 @@ syncpublish(dst_key_t *key, isc_stdtime_t now) {
 	if (result == ISC_R_SUCCESS && when < now) {
 		publish = false;
 	}
-	return (publish);
+	return publish;
 }
 
 /*%<
@@ -736,25 +710,25 @@ syncdelete(dst_key_t *key, isc_stdtime_t now) {
 	 * Smart signing started with key format 1.3.
 	 */
 	if (major == 1 && minor <= 2) {
-		return (false);
+		return false;
 	}
 
 	/* Check kasp state first. */
 	result = dst_key_getstate(key, DST_KEY_DS, &state);
 	if (result == ISC_R_SUCCESS) {
-		return (state == DST_KEY_STATE_UNRETENTIVE ||
-			state == DST_KEY_STATE_HIDDEN);
+		return state == DST_KEY_STATE_UNRETENTIVE ||
+		       state == DST_KEY_STATE_HIDDEN;
 	}
 
 	/* If no kasp state, check timings. */
 	result = dst_key_gettime(key, DST_TIME_SYNCDELETE, &when);
 	if (result != ISC_R_SUCCESS) {
-		return (false);
+		return false;
 	}
 	if (when <= now) {
-		return (true);
+		return true;
 	}
-	return (false);
+	return false;
 }
 
 #define is_zone_key(key) \
@@ -841,8 +815,8 @@ dns_dnssec_findzonekeys(dns_db_t *db, dns_dbversion_t *ver, dns_dbnode_t *node,
 			result2 = dst_key_getfilename(
 				dst_key_name(pubkey), dst_key_id(pubkey),
 				dst_key_alg(pubkey),
-				(DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
-				 DST_TYPE_STATE),
+				DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
+					DST_TYPE_STATE,
 				directory, mctx, &buf);
 			if (result2 != ISC_R_SUCCESS) {
 				char namebuf[DNS_NAME_FORMATSIZE];
@@ -928,7 +902,7 @@ failure:
 		}
 	}
 	*nkeys = count;
-	return (result);
+	return result;
 }
 
 isc_result_t
@@ -1053,7 +1027,7 @@ dns_dnssec_signmessage(dns_message_t *msg, dst_key_t *key) {
 		      ISC_R_SUCCESS);
 	msg->sig0 = dataset;
 
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 
 failure:
 	if (dynbuf != NULL) {
@@ -1066,7 +1040,7 @@ failure:
 		dst_context_destroy(&ctx);
 	}
 
-	return (result);
+	return result;
 }
 
 isc_result_t
@@ -1095,7 +1069,7 @@ dns_dnssec_verifymessage(isc_buffer_t *source, dns_message_t *msg,
 
 	if (is_response(msg)) {
 		if (msg->query.base == NULL) {
-			return (DNS_R_UNEXPECTEDTSIG);
+			return DNS_R_UNEXPECTEDTSIG;
 		}
 	}
 
@@ -1198,7 +1172,7 @@ dns_dnssec_verifymessage(isc_buffer_t *source, dns_message_t *msg,
 	dst_context_destroy(&ctx);
 	dns_rdata_freestruct(&sig);
 
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 
 failure:
 	if (signeedsfree) {
@@ -1208,7 +1182,7 @@ failure:
 		dst_context_destroy(&ctx);
 	}
 
-	return (result);
+	return result;
 }
 
 /*%
@@ -1228,8 +1202,8 @@ dns_dnssec_selfsigns(dns_rdata_t *rdata, const dns_name_t *name,
 		INSIST(sigrdataset->covers == dns_rdatatype_dnskey);
 	}
 
-	return (dns_dnssec_signs(rdata, name, rdataset, sigrdataset, ignoretime,
-				 mctx));
+	return dns_dnssec_signs(rdata, name, rdataset, sigrdataset, ignoretime,
+				mctx);
 }
 
 bool
@@ -1245,12 +1219,12 @@ dns_dnssec_signs(dns_rdata_t *rdata, const dns_name_t *name,
 
 	INSIST(sigrdataset->type == dns_rdatatype_rrsig);
 	if (sigrdataset->covers != rdataset->type) {
-		return (false);
+		return false;
 	}
 
 	result = dns_dnssec_keyfromrdata(name, rdata, mctx, &dstkey);
 	if (result != ISC_R_SUCCESS) {
-		return (false);
+		return false;
 	}
 	result = dns_rdata_tostruct(rdata, &key, NULL);
 	RUNTIME_CHECK(result == ISC_R_SUCCESS);
@@ -1270,12 +1244,12 @@ dns_dnssec_signs(dns_rdata_t *rdata, const dns_name_t *name,
 						   &sigrdata, NULL);
 			if (result == ISC_R_SUCCESS) {
 				dst_key_free(&dstkey);
-				return (true);
+				return true;
 			}
 		}
 	}
 	dst_key_free(&dstkey);
-	return (false);
+	return false;
 }
 
 isc_result_t
@@ -1322,7 +1296,7 @@ dns_dnsseckey_create(isc_mem_t *mctx, dst_key_t **dstkey,
 
 	ISC_LINK_INIT(dk, link);
 	*dkp = dk;
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 
 void
@@ -1538,7 +1512,7 @@ failure:
 	if (dstkey != NULL) {
 		dst_key_free(&dstkey);
 	}
-	return (result);
+	return result;
 }
 
 /*%
@@ -1582,12 +1556,12 @@ addkey(dns_dnsseckeylist_t *keylist, dst_key_t **newkey, bool savekeys,
 		}
 
 		key->source = dns_keysource_zoneapex;
-		return (ISC_R_SUCCESS);
+		return ISC_R_SUCCESS;
 	}
 
 	result = dns_dnsseckey_create(mctx, newkey, &key);
 	if (result != ISC_R_SUCCESS) {
-		return (result);
+		return result;
 	}
 	if (key->legacy || savekeys) {
 		key->force_publish = true;
@@ -1596,7 +1570,7 @@ addkey(dns_dnsseckeylist_t *keylist, dst_key_t **newkey, bool savekeys,
 	key->source = dns_keysource_zoneapex;
 	ISC_LIST_APPEND(*keylist, key, link);
 	*newkey = NULL;
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 
 /*%
@@ -1647,7 +1621,7 @@ mark_active_keys(dns_dnsseckeylist_t *keylist, dns_rdataset_t *rrsigs) {
 	if (dns_rdataset_isassociated(&sigs)) {
 		dns_rdataset_disassociate(&sigs);
 	}
-	return (result);
+	return result;
 }
 
 /*%
@@ -1687,9 +1661,7 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 		RETERR(dns_dnssec_keyfromrdata(origin, &rdata, mctx, &dnskey));
 		dst_key_setttl(dnskey, keys.ttl);
 
-		if (!is_zone_key(dnskey) ||
-		    (dst_key_flags(dnskey) & DNS_KEYTYPE_NOAUTH) != 0)
-		{
+		if (!is_zone_key(dnskey)) {
 			goto skip;
 		}
 
@@ -1706,7 +1678,7 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 		/* Try to read the public key. */
 		result = dst_key_fromfile(
 			dst_key_name(dnskey), dst_key_id(dnskey),
-			dst_key_alg(dnskey), (DST_TYPE_PUBLIC | DST_TYPE_STATE),
+			dst_key_alg(dnskey), DST_TYPE_PUBLIC | DST_TYPE_STATE,
 			directory, mctx, &pubkey);
 		if (result == ISC_R_FILENOTFOUND || result == ISC_R_NOPERM) {
 			result = ISC_R_SUCCESS;
@@ -1717,7 +1689,7 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 		result = dst_key_fromfile(
 			dst_key_name(dnskey), dst_key_id(dnskey),
 			dst_key_alg(dnskey),
-			(DST_TYPE_PUBLIC | DST_TYPE_PRIVATE | DST_TYPE_STATE),
+			DST_TYPE_PUBLIC | DST_TYPE_PRIVATE | DST_TYPE_STATE,
 			directory, mctx, &privkey);
 
 		/*
@@ -1734,8 +1706,8 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 				result = dst_key_fromfile(
 					dst_key_name(dnskey),
 					dst_key_id(dnskey), dst_key_alg(dnskey),
-					(DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
-					 DST_TYPE_STATE),
+					DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
+						DST_TYPE_STATE,
 					directory, mctx, &privkey);
 				if (result == ISC_R_SUCCESS &&
 				    dst_key_pubcompare(dnskey, privkey, false))
@@ -1757,8 +1729,8 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 			result2 = dst_key_getfilename(
 				dst_key_name(dnskey), dst_key_id(dnskey),
 				dst_key_alg(dnskey),
-				(DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
-				 DST_TYPE_STATE),
+				DST_TYPE_PUBLIC | DST_TYPE_PRIVATE |
+					DST_TYPE_STATE,
 				directory, mctx, &buf);
 			if (result2 != ISC_R_SUCCESS) {
 				char namebuf[DNS_NAME_FORMATSIZE];
@@ -1791,11 +1763,6 @@ dns_dnssec_keylistfromrdataset(const dns_name_t *origin, const char *directory,
 			goto skip;
 		}
 		RETERR(result);
-
-		/* This should never happen. */
-		if ((dst_key_flags(privkey) & DNS_KEYTYPE_NOAUTH) != 0) {
-			goto skip;
-		}
 
 		/*
 		 * Whatever the key's default TTL may have
@@ -1843,7 +1810,7 @@ failure:
 	if (privkey != NULL) {
 		dst_key_free(&privkey);
 	}
-	return (result);
+	return result;
 }
 
 isc_result_t
@@ -1856,14 +1823,14 @@ dns_dnssec_make_dnskey(dst_key_t *key, unsigned char *buf, int bufsize,
 	isc_buffer_init(&b, buf, bufsize);
 	result = dst_key_todns(key, &b);
 	if (result != ISC_R_SUCCESS) {
-		return (result);
+		return result;
 	}
 
 	dns_rdata_reset(target);
 	isc_buffer_usedregion(&b, &r);
 	dns_rdata_fromregion(target, dst_key_class(key), dns_rdatatype_dnskey,
 			     &r);
-	return (ISC_R_SUCCESS);
+	return ISC_R_SUCCESS;
 }
 
 static isc_result_t
@@ -1877,7 +1844,7 @@ addrdata(dns_rdata_t *rdata, dns_diff_t *diff, const dns_name_t *origin,
 	dns_diff_appendminimal(diff, &tuple);
 
 failure:
-	return (result);
+	return result;
 }
 
 static isc_result_t
@@ -1891,7 +1858,7 @@ delrdata(dns_rdata_t *rdata, dns_diff_t *diff, const dns_name_t *origin,
 	dns_diff_appendminimal(diff, &tuple);
 
 failure:
-	return (result);
+	return result;
 }
 
 static isc_result_t
@@ -1926,7 +1893,7 @@ publish_key(dns_diff_t *diff, dns_dnsseckey_t *key, const dns_name_t *origin,
 	result = addrdata(&dnskey, diff, origin, ttl, mctx);
 
 failure:
-	return (result);
+	return result;
 }
 
 static isc_result_t
@@ -1948,7 +1915,7 @@ remove_key(dns_diff_t *diff, dns_dnsseckey_t *key, const dns_name_t *origin,
 	result = delrdata(&dnskey, diff, origin, ttl, mctx);
 
 failure:
-	return (result);
+	return result;
 }
 
 static bool
@@ -1966,11 +1933,11 @@ exists(dns_rdataset_t *rdataset, dns_rdata_t *rdata) {
 		dns_rdataset_current(&trdataset, &current);
 		if (dns_rdata_compare(rdata, &current) == 0) {
 			dns_rdataset_disassociate(&trdataset);
-			return (true);
+			return true;
 		}
 	}
 	dns_rdataset_disassociate(&trdataset);
-	return (false);
+	return false;
 }
 
 isc_result_t
@@ -2110,7 +2077,7 @@ dns_dnssec_syncupdate(dns_dnsseckeylist_t *keys, dns_dnsseckeylist_t *rmkeys,
 	if (!dns_rdataset_isassociated(cds) &&
 	    !dns_rdataset_isassociated(cdnskey))
 	{
-		return (ISC_R_SUCCESS);
+		return ISC_R_SUCCESS;
 	}
 
 	/*
@@ -2174,7 +2141,7 @@ dns_dnssec_syncupdate(dns_dnsseckeylist_t *keys, dns_dnsseckeylist_t *rmkeys,
 	result = ISC_R_SUCCESS;
 
 failure:
-	return (result);
+	return result;
 }
 
 isc_result_t
@@ -2254,7 +2221,7 @@ dns_dnssec_syncdelete(dns_rdataset_t *cds, dns_rdataset_t *cdnskey,
 	result = ISC_R_SUCCESS;
 
 failure:
-	return (result);
+	return result;
 }
 
 /*
@@ -2494,7 +2461,7 @@ dns_dnssec_updatekeys(dns_dnsseckeylist_t *keys, dns_dnsseckeylist_t *newkeys,
 	result = ISC_R_SUCCESS;
 
 failure:
-	return (result);
+	return result;
 }
 
 isc_result_t
@@ -2542,5 +2509,5 @@ dns_dnssec_matchdskey(dns_name_t *name, dns_rdata_t *dsrdata,
 		result = ISC_R_NOTFOUND;
 	}
 
-	return (result);
+	return result;
 }

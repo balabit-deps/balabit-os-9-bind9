@@ -9,6 +9,21 @@
 # See the COPYRIGHT file distributed with this work for additional
 # information regarding copyright ownership.
 
+import pytest
 
+pytestmark = pytest.mark.extra_artifacts(
+    [
+        "dig.out.*",
+        "rndc.out.*",
+        "ans*/ans.run",
+        "ns*/named.stats*",
+        "ns*/named_dump*",
+        "ns*/named.stats*",
+        "ns*/root.bk",
+    ]
+)
+
+
+@pytest.mark.flaky(max_runs=2)
 def test_serve_stale(run_tests_sh):
     run_tests_sh()

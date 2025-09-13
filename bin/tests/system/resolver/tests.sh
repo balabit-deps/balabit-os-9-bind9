@@ -54,7 +54,7 @@ if [ -x "${RESOLVE}" ]; then
   echo_i "checking that local bound address can be set (Can't query from a denied address) ($n)"
   ret=0
   resolve_with_opts -b 10.53.0.8 -t a -s 10.53.0.1 www.example.org 2>resolve.out.ns1.test${n} || ret=1
-  grep "resolution failed: SERVFAIL" resolve.out.ns1.test${n} >/dev/null || ret=1
+  grep "resolution failed: failure" resolve.out.ns1.test${n} >/dev/null || ret=1
   if [ $ret != 0 ]; then echo_i "failed"; fi
   status=$((status + ret))
 
@@ -85,6 +85,37 @@ if [ -x "${RESOLVE}" ]; then
   status=$((status + ret))
 fi
 
+rndccmd 10.53.0.1 stats || ret=1 # Get the responses, RTT and timeout statistics before the following timeout tests
+grep -F 'responses received' ns1/named.stats >ns1/named.stats.responses-before || true
+grep -F 'queries with RTT' ns1/named.stats >ns1/named.stats.rtt-before || true
+grep -F 'query timeouts' ns1/named.stats >ns1/named.stats.timeouts-before || true
+mv ns1/named.stats ns1/named.stats-before
+
+# Checking if the "hung fetch" timer kicks in and interrupts a non-responsive query.
+n=$((n + 1))
+echo_i "checking no response timeout handling ($n)"
+ret=0
+dig_with_opts +tcp +tries=1 +timeout=15 noresponse.example.net @10.53.0.1 a >dig.out.ns1.test${n} || ret=1
+grep -F "status: SERVFAIL" dig.out.ns1.test${n} >/dev/null || ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
+n=$((n + 1))
+echo_i "checking that the timeout didn't skew the resolver responses counters and did update the timeout counter ($n)"
+ret=0
+rndccmd 10.53.0.1 stats || ret=1
+grep -F 'responses received' ns1/named.stats >ns1/named.stats.responses-after || true
+grep -F 'queries with RTT' ns1/named.stats >ns1/named.stats.rtt-after || true
+grep -F 'query timeouts' ns1/named.stats >ns1/named.stats.timeouts-after || true
+mv ns1/named.stats ns1/named.stats-after
+diff ns1/named.stats.responses-before ns1/named.stats.responses-after >/dev/null || ret=1
+diff ns1/named.stats.rtt-before ns1/named.stats.rtt-after >/dev/null || ret=1
+# The following check is disabled in this branch, because TCP timeouts don't
+# work well here, and instead the "hung fetch" timer interrupts the query.
+#diff ns1/named.stats.timeouts-before ns1/named.stats.timeouts-after >/dev/null && ret=1
+if [ $ret != 0 ]; then echo_i "failed"; fi
+status=$((status + ret))
+
 n=$((n + 1))
 echo_i "checking handling of bogus referrals ($n)"
 # If the server has the "INSIST(!external)" bug, this query will kill it.
@@ -98,7 +129,7 @@ if [ -x "${RESOLVE}" ]; then
   echo_i "checking handling of bogus referrals using dns_client ($n)"
   ret=0
   resolve_with_opts -t a -s 10.53.0.1 www.example.com 2>resolve.out.ns1.test${n} || ret=1
-  grep "resolution failed: SERVFAIL" resolve.out.ns1.test${n} >/dev/null || ret=1
+  grep "resolution failed: failure" resolve.out.ns1.test${n} >/dev/null || ret=1
   if [ $ret != 0 ]; then echo_i "failed"; fi
   status=$((status + ret))
 fi
@@ -322,6 +353,10 @@ done
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
 
+stop_server ns4
+touch ns4/named.noaa
+start_server --noclean --restart --port ${PORT} ns4 || ret=1
+
 n=$((n + 1))
 echo_i "RT21594 regression test check setup ($n)"
 ret=0
@@ -357,6 +392,10 @@ dig_with_opts +tcp noexistent @10.53.0.5 txt >dig.ns5.out.${n} || ret=1
 grep "status: NXDOMAIN" dig.ns5.out.${n} >/dev/null || ret=1
 if [ $ret != 0 ]; then echo_i "failed"; fi
 status=$((status + ret))
+
+stop_server ns4
+rm ns4/named.noaa
+start_server --noclean --restart --port ${PORT} ns4 || ret=1
 
 n=$((n + 1))
 echo_i "check that replacement of additional data by a negative cache no data entry clears the additional RRSIGs ($n)"

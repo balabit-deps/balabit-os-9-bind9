@@ -366,7 +366,7 @@ typedef struct librpz_client librpz_client_t;
  * @param mutex: pointer to the lock for the client handle
  * @param log_ctx: NULL or resolver's context log messages
  */
-typedef librpz_clist_t *(librpz_clist_create_t)(librpz_emsg_t  *emsg,
+typedef librpz_clist_t *(librpz_clist_create_t)(librpz_emsg_t * emsg,
 						librpz_mutex_t *lock,
 						librpz_mutex_t *unlock,
 						librpz_mutex_t *mutex_destroy,
@@ -387,7 +387,7 @@ LIBDEF_F(clist_detach)
  * @param use_expired: true to not ignore expired zones
  * @return client handle or NULL if the handle could not be created
  */
-typedef librpz_client_t *(librpz_client_create_t)(librpz_emsg_t	 *emsg,
+typedef librpz_client_t *(librpz_client_create_t)(librpz_emsg_t * emsg,
 						  librpz_clist_t *clist,
 						  const char	 *cstr,
 						  bool		  use_expired);
@@ -648,8 +648,8 @@ LIBDEF_F(zone_refresh)
  * @param client context
  * @return malloc'ed string or NULL after error
  */
-typedef char *(librpz_db_info_t)(librpz_emsg_t *emsg, bool license, bool cfiles,
-				 bool listens, librpz_rsp_t *rsp);
+typedef char *(librpz_db_info_t)(librpz_emsg_t * emsg, bool license,
+				 bool cfiles, bool listens, librpz_rsp_t *rsp);
 LIBDEF_F(db_info)
 
 /**
@@ -669,7 +669,7 @@ LIBDEF_F(itr_start)
  * @param rsp state from librpz_itr_start()
  * @return malloc'ed string or NULL after error
  */
-typedef char *(librpz_mf_stats_t)(librpz_emsg_t *emsg, librpz_rsp_t *rsp);
+typedef char *(librpz_mf_stats_t)(librpz_emsg_t * emsg, librpz_rsp_t *rsp);
 LIBDEF_F(mf_stats)
 
 /**
@@ -678,7 +678,7 @@ LIBDEF_F(mf_stats)
  * @param[in,out] rsp: state from librpz_itr_start()
  * @return malloc'ed string or NULL after error
  */
-typedef char *(librpz_vers_stats_t)(librpz_emsg_t *emsg, librpz_rsp_t *rsp);
+typedef char *(librpz_vers_stats_t)(librpz_emsg_t * emsg, librpz_rsp_t *rsp);
 LIBDEF_F(vers_stats)
 
 /**
@@ -688,7 +688,7 @@ LIBDEF_F(vers_stats)
  * @param[in,out] rsp state from librpz_rsp_start()
  * @return malloc'ed string or NULL after error
  */
-typedef char *(librpz_itr_zone_t)(librpz_emsg_t *emsg, bool all_zones,
+typedef char *(librpz_itr_zone_t)(librpz_emsg_t * emsg, bool all_zones,
 				  librpz_rsp_t *rsp);
 LIBDEF_F(itr_zone)
 
@@ -755,11 +755,12 @@ typedef int(librpz_domain_pton2_t)(const char *src, u_char *dst, size_t dstsiz,
 LIBDEF_F(domain_pton2)
 
 typedef union socku socku_t;
-typedef socku_t *(librpz_mk_inet_su_t)(socku_t *su, const struct in_addr *addrp,
-				       in_port_t port);
+typedef socku_t *(librpz_mk_inet_su_t)(socku_t * su,
+				       const struct in_addr *addrp,
+				       in_port_t	     port);
 LIBDEF_F(mk_inet_su)
 
-typedef socku_t *(librpz_mk_inet6_su_t)(socku_t		      *su,
+typedef socku_t *(librpz_mk_inet6_su_t)(socku_t * su,
 					const struct in6_addr *addrp,
 					uint32_t scope_id, in_port_t port);
 LIBDEF_F(mk_inet6_su)
@@ -870,7 +871,7 @@ librpz_lib_open(librpz_emsg_t *emsg, void **dl_handle, const char *path) {
 		if (dlclose(*dl_handle) != 0) {
 			snprintf(emsg->c, sizeof(librpz_emsg_t),
 				 "dlopen(NULL): %s", dlerror());
-			return (NULL);
+			return NULL;
 		}
 		*dl_handle = NULL;
 	}
@@ -887,39 +888,39 @@ librpz_lib_open(librpz_emsg_t *emsg, void **dl_handle, const char *path) {
 			if (dl_handle != NULL) {
 				*dl_handle = handle;
 			}
-			return (new_librpz);
+			return new_librpz;
 		}
 		if (dlclose(handle) != 0) {
 			snprintf(emsg->c, sizeof(librpz_emsg_t),
 				 "dlsym(NULL, " LIBRPZ_DEF_STR "): %s",
 				 dlerror());
-			return (NULL);
+			return NULL;
 		}
 	}
 
 	if (path == NULL || path[0] == '\0') {
 		snprintf(emsg->c, sizeof(librpz_emsg_t),
 			 "librpz not linked and no dlopen() path provided");
-		return (NULL);
+		return NULL;
 	}
 
 	handle = dlopen(path, RTLD_NOW | RTLD_LOCAL);
 	if (handle == NULL) {
 		snprintf(emsg->c, sizeof(librpz_emsg_t), "dlopen(%s): %s", path,
 			 dlerror());
-		return (NULL);
+		return NULL;
 	}
 	new_librpz = dlsym(handle, LIBRPZ_DEF_STR);
 	if (new_librpz != NULL) {
 		if (dl_handle != NULL) {
 			*dl_handle = handle;
 		}
-		return (new_librpz);
+		return new_librpz;
 	}
 	snprintf(emsg->c, sizeof(librpz_emsg_t),
 		 "dlsym(%s, " LIBRPZ_DEF_STR "): %s", path, dlerror());
 	dlclose(handle);
-	return (NULL);
+	return NULL;
 }
 #elif defined(LIBRPZ_LIB_OPEN)
 /*
@@ -935,11 +936,11 @@ librpz_lib_open(librpz_emsg_t *emsg, void **dl_handle, const char *path) {
 
 #if LIBRPZ_LIB_OPEN == 1
 	emsg->c[0] = '\0';
-	return (&LIBRPZ_DEF);
+	return &LIBRPZ_DEF;
 #else  /* if LIBRPZ_LIB_OPEN == 1 */
 	snprintf(emsg->c, sizeof(librpz_emsg_t),
 		 "librpz not available via ./configure");
-	return (NULL);
+	return NULL;
 #endif /* LIBRPZ_LIB_OPEN */
 }
 #endif /* LIBRPZ_LIB_OPEN */
